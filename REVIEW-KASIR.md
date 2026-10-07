@@ -47,10 +47,32 @@ CSS reduced motion/transparency dan fallback putih solid tersedia. Preferensi te
 - `npm run typecheck`: lulus.
 - `npm run lint`: lulus.
 - `npm test`: 24 lulus, 0 gagal. Mencakup perhitungan integer/basis point, pembulatan/alokasi, promo per channel, snapshot, no stacking, pembayaran/stock rollback, retry idempoten, dua penyajian, batch tambahan, cetak/konfirmasi/SALINAN, refund nilai asli, return sekali, custody dan batas kasir aktif.
-- Build dan packaging dijalankan melalui helper Sites sebelum sumber/versi disimpan; kegagalan menghentikan workflow. Catatan simpan aktual berada di `../REVIEW-SITES-SAVE.md` pada workspace induk.
+- Build dan packaging dijalankan melalui helper Sites sebelum sumber/versi disimpan; kegagalan menghentikan workflow. Identitas versi dan bukti simpan aktual dicatat pada bagian Penyimpanan versi di bawah.
 
 AC-102–108 mempunyai bukti simulasi terpilih di tabel di atas dan tes domain. Migrasi/restore, replay tersimpan permanen, isolasi transaksi lintas tab, server/auth, printer fisik dan pengujian perangkat tetap belum dibuktikan. AC-101 membutuhkan persetujuan visual pemilik serta perbandingan aplikasi operasional kelak. UT-01–18 membutuhkan peserta sesuai spesifikasi dan belum dinyatakan lulus.
 
 ## Batas prototipe
 
 Data contoh berada di memori dan hilang saat reload. Commit atomik menggunakan salinan state dalam simulasi, bukan transaksi IndexedDB/server. QRIS hanya pencatatan/verifikasi manual contoh. Cetak dan konfirmasi fisik disimulasikan tanpa koneksi printer. UI dan tes domain bukan bukti siap pilot/rilis. Stack produksi D-02–05 dan mockup lokal lama dipertahankan.
+
+## Penyimpanan versi 1 — 7 Oktober 2026
+
+Revisi Kasir berhasil disimpan sebagai **versi 1** pada proyek Sites yang sama. Tidak ada deployment (`deployment_id: null`). Sumber sudah dipush, build lokal dan packaging lulus sebelum penyimpanan.
+
+- Versi: `appgprj_6ac54219b9248191bf551b9871d78958~appgver_9a818fdf488081918e4a3d0f9682509d`.
+- Commit sumber: `cbd92da46bac2950d18f89909dc377e68e8e8a76`.
+- Build: helper Sites `build-site.mjs`, exit 0. Vinext melaporkan build complete; klasifikasi route statis/dinamis masih Unknown pada starter, bukan kegagalan build.
+- Archive: `/private/tmp/berrie-kasir-review.tar.gz`, 63 file, 2.129.920 byte; SHA-256 `77aa1dc9aa50e3ff021829a36a1563013d8c213aa980d5589e9b5757e80ac087`.
+- Verifikasi: typecheck, lint, 24 tes domain lulus; pemeriksaan browser terpilih sesuai laporan review.
+
+Visual menunggu review pemilik. Data masih contoh di memori, cetak/pembayaran bukan integrasi operasional. Tidak ada screenshot tambahan setelah pemilik meminta menghentikannya.
+
+Bukti review dan batasnya berada pada bagian di atas.
+
+Catatan ini membuktikan versi D-43–45 yang disimpan. D-46/D-47 masih arahan dokumentasi/prompt, belum UI; versi lokal setelah pembersihan file bukan versi 1 yang telah disimpan.
+
+## Pemeriksaan sesudah pembersihan lokal — 7 Oktober 2026
+
+Menghapus 49 komponen UI tanpa jalur import dari aplikasi, helper ID tanpa pemakai, tiga SVG placeholder dan dua file contoh D1; komponen terpakai/runtime/konfigurasi/dependensi tetap. Catatan README diringkas, bukti simpan versi 1 digabung ke laporan ini. Tidak mengubah app/page.tsx, app/globals.css, domain atau fixture.
+
+Typecheck dan lint lulus; 24 tes domain lulus (0 gagal); build lokal selesai, git diff --check lulus. Browser/review visual tidak diulang; pemeriksaan ini tidak menerapkan D-46/D-47 atau meluluskan AC/UT baru. Perubahan masih lokal, tanpa commit/push/simpan versi baru atau deployment.
