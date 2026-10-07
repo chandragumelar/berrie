@@ -1,14 +1,14 @@
 # Berrie — Prototipe Sites M-03
 
-7 Oktober 2026. D-46–48 sudah diterapkan pada UI prototipe; [review terbaru](REVIEW-KASIR-D47.md). Revisi Kasir/promo D-43–45 diterapkan pada proyek **Berrie · Prototipe Kasir**, `appgprj_6ac54219b9248191bf551b9871d78958`. Visual menunggu review pemilik; simpan versi tanpa deployment.
+7 Oktober 2026. D-46–48 sudah diterapkan pada UI prototipe dan disimpan sebagai versi 2, tanpa deployment; [review dan identitas versi terbaru](REVIEW-KASIR-D47.md). Revisi Kasir/promo D-43–45 diterapkan pada proyek **Berrie · Prototipe Kasir**, `appgprj_6ac54219b9248191bf551b9871d78958`. Arah estetika versi lama ditolak. [Design system D-49/D-50](../DESIGN-SYSTEM.md) kini diterapkan pada Kasir lokal: page netral, gradient bubblegum terang, selected cyan, sidebar 200/64 px, font Apple system/Inter lokal. [Review terkini](REVIEW-KASIR-D49.md); persetujuan visual belum selesai.
 
 ## Cakupan revisi
 
-Satu Buka kas sebagai langkah awal, channel Toko, tabel promo nyata per SKU, keranjang kompak, dua penyajian per item, pembayaran tunai/QRIS dan modal Struk yang menampilkan dua tujuan. Font sistem lokal, tombol kapsul, kontrol konsisten dan Lucide mengikuti token design system. Promo SKU tidak digabung diskon order; topping tetap utuh dan snapshot harga lama tidak diganti otomatis. Font 14/18/20/22 sesuai peran, SKU bernama unik, sel numerik, alias tipe, workflow toggle kas dan navigasi kiri yang dapat diciutkan. Lihat [hasil terbaru](REVIEW-KASIR-D47.md); [review versi 1](REVIEW-KASIR.md) dipertahankan.
+Satu Buka kas sebagai langkah awal, channel Toko, tabel promo nyata per SKU, keranjang kompak, dua penyajian per item, pembayaran tunai/QRIS dan modal Struk yang menampilkan dua tujuan. Font sistem Apple/Inter dibundel lokal, tombol kapsul, kontrol konsisten dan Lucide mengikuti token design system. Promo SKU tidak digabung diskon order; topping tetap utuh dan snapshot harga lama tidak diganti otomatis. Font 14/18/20/22 sesuai peran, SKU bernama unik, sel numerik, alias tipe, workflow toggle kas dan navigasi kiri yang dapat diciutkan. Lihat [hasil terbaru](REVIEW-KASIR-D47.md); [review versi 1](REVIEW-KASIR.md) dipertahankan.
 
-`app/page.tsx` memuat UI, `lib/berrie/domain.ts` logika simulasi murni dan `app/globals.css` styling. Data bisnis **di memori**; reload menghapus perubahan demo. Tidak membuktikan IndexedDB/offline, autentikasi/izin server, backup, pembayaran nyata, printer fisik atau kesiapan pilot. Panel demo menguji gagal simpan/hasil belum diketahui tanpa transaksi nyata. Data toko contoh mengaktifkan Tunai + QRIS; aktivasi toko baru hanya Tunai.
+`app/page.tsx` memuat UI, `app/berrie-controls.tsx` kontrol bersama, `app/component-review.tsx` fixture review terpisah, `lib/berrie/domain.ts` logika simulasi murni dan `app/globals.css` styling. Data bisnis **di memori**; reload menghapus perubahan demo. Tidak membuktikan IndexedDB/offline, autentikasi/izin server, backup, pembayaran nyata, printer fisik atau kesiapan pilot. Panel demo menguji gagal simpan/hasil belum diketahui tanpa transaksi nyata. Data toko contoh mengaktifkan Tunai + QRIS; aktivasi toko baru hanya Tunai.
 
-Acuan lokal: [spesifikasi](../specs/README.md), [prompt Kasir](../PROMPT-SITES-PERBAIKAN-KASIR.md) dan [design system](../DESIGN-SYSTEM.md). Starter tetap Vinext untuk prototipe; stack produksi D-02–05 tetap. `mockup/` lama tidak diubah.
+Acuan lokal: [indeks spesifikasi](../specs/README.md), [UX Principles](../specs/12-ux-principles.md), [alur](../specs/02-user-flows.md), [aturan layar](../specs/09-screens-and-hardware.md), [acceptance criteria](../specs/10-acceptance-criteria.md) dan [design system](../DESIGN-SYSTEM.md). Scope revisi tetap Kasir dahulu. Starter tetap Vinext untuk prototipe; stack produksi D-02–05 tetap. `mockup/` lama tidak diubah.
 
 ## Perintah lokal
 
@@ -23,7 +23,7 @@ Dari direktori proyek dengan dependensi terpasang dan Node ≥22.13:
 | `npm run build` | Build lokal, bukan deployment |
 | `npm start` | Preview Worker hasil build di loopback |
 
-Typecheck, lint dan 31 tes domain lulus pada revisi ini. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-KASIR.md.
+Typecheck, lint dan 31 tes domain lulus; identitas hasil terbaru dicatat di review D-49/D-50. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-KASIR-D49.md.
 
 ## Penyimpanan dan publikasi
 
@@ -35,7 +35,8 @@ Typecheck, lint dan 31 tes domain lulus pada revisi ini. Build/packaging diperik
 | --- | --- |
 | `app/page.tsx`, `app/layout.tsx`, `app/globals.css` | UI, metadata dan style prototipe |
 | `lib/berrie/domain.ts`, `catalog.ts`, `aliases.ts`, `*.test.ts` | Domain simulasi dan 31 tes |
-| `components/ui/`, `hooks/use-mobile.ts`, `lib/utils.ts` | Dua belas komponen UI beserta dependensi yang dipakai |
+| `components/ui/`, `hooks/use-mobile.ts`, `lib/utils.ts` | Komponen UI terpakai beserta dependensinya |
+| `public/fonts/InterVariable.woff2`, `OFL.txt` | Inter variable lokal dan lisensi OFL; tanpa CDN font saat membuka Kasir |
 | `public/favicon.svg` | Favicon Berrie yang direferensikan metadata |
 | `build/`, `scripts/`, `vite.config.ts`, `.openai/hosting.json` | Runtime preview/build Sites dan identitas proyek; dipertahankan |
 | `lib/connector*`, `app/chatgpt-auth.ts`, `components/connector-error.tsx` | Dukungan opsional platform Sites; bukan fitur POS aktif |
@@ -44,4 +45,6 @@ Typecheck, lint dan 31 tes domain lulus pada revisi ini. Build/packaging diperik
 
 Pembersihan 7 Oktober 2026 menghapus komponen UI starter tanpa jalur import dari aplikasi, ikon placeholder dan contoh D1 terpisah. Konfigurasi, package manager/lockfile, runtime dan perilaku UI tetap. Manifest masih menyediakan dukungan tooling starter; tugas ini tidak mengubah dependensi. Petunjuk workflow platform berada pada skill Sites, bukan salinan manual starter di repo.
 
-Root `berrie/` belum memiliki Git; direktori `berrie-site/` mempunyai Git sendiri. [Review dan identitas versi](REVIEW-KASIR.md) merekam versi 1 yang pernah disimpan; pembersihan lokal tidak otomatis memperbarui versi Sites atau melakukan deployment.
+Root `berrie/` belum memiliki Git; direktori `berrie-site/` mempunyai Git sendiri. [Review versi 1](REVIEW-KASIR.md) dan [review versi 2](REVIEW-KASIR-D47.md) merekam hasil serta identitas masing-masing; pembersihan lokal tidak otomatis memperbarui versi Sites atau melakukan deployment.
+
+Preview browser sesi ini disetel tablet landscape **1024×768**. URL loopback mengikuti perintah di atas; viewport browser dapat disesuaikan untuk review, tanpa mengubah data transaksi.

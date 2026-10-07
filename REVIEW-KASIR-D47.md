@@ -27,10 +27,22 @@ Navigasi tetap sama; tidak membangun ulang layar lain. Pembersihan starter yang 
 
 `npm run typecheck`, `npm run lint` dan `npm test` lulus; **31 tes, 0 gagal**. Regresi tambahan memeriksa alias pada batas domain, preservasi katalog/histori, SKU unik, filter SKU nyata, sel numerik dan stok manual. Tes lama promo/perhitungan integer, snapshot/alokasi/refund, idempotensi, rollback pembayaran/stok, batch tambahan dan SALINAN tetap lulus.
 
-Build lokal dan packaging melalui helper Sites lulus. Penyimpanan sempat tertahan oleh Sites project not found; akses proyek yang sama kemudian pulih pada 7 Oktober 2026. Kode lokal dipertahankan, proyek tidak diganti. Identitas versi/commit dan hasil penyimpanan dicatat setelah layanan mengonfirmasi pada [catatan simpan](../REVIEW-SITES-SAVE.md). Tanpa deployment.
+Build lokal dan packaging melalui helper Sites lulus. Penyimpanan sempat tertahan oleh Sites project not found; akses proyek yang sama kemudian pulih pada 7 Oktober 2026. Kode lokal dipertahankan, proyek tidak diganti. Identitas versi/commit dan hasil penyimpanan yang dikonfirmasi layanan dicatat pada [Penyimpanan versi 2](#penyimpanan-versi-2). Tanpa deployment.
 
 Kontras menggunakan token semantik D-46. Contoh pasangan aktual: terang hitam/putih 21:1, teks sekunder #4B5563/putih 7,56:1; gelap #F5F7F8/#1C2224 14,99:1 dan #C0CBD0/#1C2224 9,74:1 (dibulatkan, dihitung dari sRGB). Belum audit semua backdrop/hover/pressed/perangkat. CSS reduced motion/transparency, prefers-contrast dan forced-colors tersedia dengan fallback solid/system colors, tetapi belum diemulasi sebagai preferensi OS. Panel review menunjukkan komponen/state untuk pemeriksaan lanjutan.
 
 Teks 200% diuji melalui kontrol review yang mengubah root, **bukan klaim zoom browser native 200% atau Dynamic Type**. Browser tersedia belum menyediakan emulasi media/zoom native; Safari/iPhone fisik, keyboard layar dan autozoom input 14 px belum diuji. Zoom tidak dinonaktifkan. Pembaca layar/perangkat nyata juga belum menjadi bukti.
 
 AC-74/75/96/101/106/109/110/111 mempunyai bukti prototipe terpilih di atas, tidak otomatis lulus penuh. AC domain punya regresi simulasi, bukan bukti penyimpanan IndexedDB/isolasi antar-tab/server/offline/migrasi/restore/printer fisik. UT-01–18 tetap membutuhkan peserta. Data bisnis di memori dan hilang saat reload; pembayaran/printing adalah simulasi. Tidak menyatakan siap pilot, native Apple atau desain disetujui.
+
+## Penyimpanan versi 2
+
+7 Oktober 2026 · [Berrie · Prototipe Kasir](sites-project://appgprj_6ac54219b9248191bf551b9871d78958). Revisi D-46–48 berhasil disimpan sebagai **versi 2**, tanpa deployment. Akses proyek yang sempat mengembalikan project not found sudah pulih; proyek yang sama dipertahankan.
+
+- Versi: `appgprj_6ac54219b9248191bf551b9871d78958~appgver_15f6470accd48191bdd1ff92a969fd49`
+- Sumber ter-push: `11be9656cd0e07a7323490260a03203afe1f8fb2`
+- Arsip terkonfirmasi layanan: 60 file, 1.945.600 byte, SHA-256 `025ca1c727eb33ba9b9e3ffd34b9d43da8c3b959186c334cc9e699e6fc157eb8`.
+- Hasil save: version_number=2, deployment_id=null. Pemeriksaan ulang proyek: latest_version_number=2, current_live_url=null.
+- 31 tes/typecheck/lint sebelumnya lulus; build dan packaging terbaru lulus. Tidak membuat screenshot baru.
+
+Visual belum disetujui; bukan aplikasi operasional. Versi 1 sebelumnya bersumber `cbd92da46bac2950d18f89909dc377e68e8e8a76`; [bukti versi 1](REVIEW-KASIR.md). Catatan ini mempertahankan hasil penyimpanan yang sudah dikonfirmasi, bukan pemeriksaan layanan baru saat perapihan dokumen.
