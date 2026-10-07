@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture,createOrder,makeUnits,quoteSKU,totals,reduceAction,expected,freezeAllocation,percent,groupUnits,type State,type Order,type Action} from './domain.ts';
+import {fixture,createOrder,makeUnits,quoteSKU,totals,reduceAction,expected,freezeAllocation,percent,groupUnits,type State,type Order,previewCSV,type Action} from './domain.ts';
 const action=(kind:string,order:Order|null,data:Record<string,unknown>={},reason=''):Action=>({kind,activity:kind==='promo'?'Pengaturan':'Rutin',data,reason,amount:0,...order?{order:order.id,revision:order.revision}:{}});
 function setup(qty=3){let s=fixture();s=reduceAction(s,action('open',null,{amount:'0'}),'open');const o=createOrder(s);o.units=makeUnits(s,o,s.catalog.find(x=>x.id==='kopi-b')!,qty,['shot'],'Bungkus','');s.orders.push(o);return{s,o};}
 const settle=(s:State,o:Order,data:Record<string,unknown>={received:'100000'})=>reduceAction(s,action('settle',o,{source:'Payment',method:'Tunai',...data}),'settle');
@@ -17,7 +17,7 @@ test('QRIS requires human verification; confirmed noncash does not change drawer
 test('make first, then pay without draft does not debit stock again',()=>{const{s,o}=setup();const n=reduceAction(s,action('process',o),'process'),paid=settle(n,n.orders[0]);assert.equal(paid.catalog[1].stock,7);assert.equal(paid.orders[0].batches.length,1);assert.equal(paid.stockLedger.length,3);});
 test('new additions become batch 2; batch 1 immutable',()=>{const{s,o}=setup(1);const n=reduceAction(s,action('process',o),'process');const batch=structuredClone(n.orders[0].batches[0]);n.orders[0].units.push(...makeUnits(n,n.orders[0],n.catalog.find(x=>x.id==='air')!,1,[],'Makan di tempat',''));const paid=settle(n,n.orders[0]);assert.equal(paid.orders[0].batches.length,2);assert.deepEqual(paid.orders[0].batches[0],batch);assert.equal(paid.orders[0].batches[1].units.length,1);});
 test('same SKU with two servings stays separate rows and one bill',()=>{const{s,o}=setup(1);o.units.push(...makeUnits(s,o,s.catalog[1],1,['shot'],'Makan di tempat',''));assert.equal(groupUnits(o).length,2);assert.equal(totals(o).total,46000);});
-test('manual availability and zero stock are different',()=>{const s=fixture(),o=createOrder(s);assert.equal(s.catalog[0].stock,20);assert.throws(()=>makeUnits(s,o,s.catalog[0],1,[],'Bungkus',''),/tidak dijual/);assert.throws(()=>makeUnits(s,o,s.catalog.find(x=>x.id==='kentang')!,1,[],'Bungkus',''));assert.equal(makeUnits(s,o,s.catalog.find(x=>x.id==='teh')!,1,[],'Bungkus','').length,1);});
+test('inactive sale and zero stock are different',()=>{const s=fixture(),o=createOrder(s);assert.equal(s.catalog[0].stock,20);assert.throws(()=>makeUnits(s,o,s.catalog[0],1,[],'Bungkus',''),/tidak dijual/);assert.throws(()=>makeUnits(s,o,s.catalog.find(x=>x.id==='kentang')!,1,[],'Bungkus',''));assert.equal(makeUnits(s,o,s.catalog.find(x=>x.id==='teh')!,1,[],'Bungkus','').length,1);});
 test('receipt attempt/confirm/reprint never changes money or stock',()=>{const{s,o}=setup(1);let n=settle(s,o);const cash=expected(n),stock=n.catalog[1].stock,ledger=n.stockLedger.length;for(const data of [{stage:'attempt'},{stage:'confirm'},{stage:'attempt',retry:true}]){n=reduceAction(n,action('print',n.orders[0],{target:'Pelanggan & dapur',batch:1,...data}),'print-'+data.stage+String(data.retry));assert.equal(expected(n),cash);assert.equal(n.catalog[1].stock,stock);assert.equal(n.stockLedger.length,ledger);}assert.equal(n.orders[0].batches[0].attempts,2);assert.equal(n.orders[0].customerPrint!.attempts,2);assert.equal(n.orders[0].batches[0].print,'unknown');});
 test('second receipt attempt requires SALINAN and physical confirmation requires attempt',()=>{const{s,o}=setup(1);let n=settle(s,o);assert.throws(()=>reduceAction(n,action('print',n.orders[0],{target:'Dapur saja',batch:1,stage:'confirm'}),'confirm'),/Cetak dahulu/);n=reduceAction(n,action('print',n.orders[0],{target:'Dapur saja',batch:1,stage:'attempt'}),'attempt');assert.throws(()=>reduceAction(n,action('print',n.orders[0],{target:'Dapur saja',batch:1,stage:'attempt'}),'attempt2'),/SALINAN/);});
 test('paid customer receipt after unpaid receipt is new; old kitchen not repeated',()=>{const{s,o}=setup(1);let n=reduceAction(s,action('process',o),'process');n=reduceAction(n,action('print',n.orders[0],{target:'Pelanggan & dapur',batch:1,stage:'attempt'}),'unpaid');n=settle(n,n.orders[0]);n=reduceAction(n,action('print',n.orders[0],{target:'Pelanggan saja',stage:'attempt'}),'paidreceipt');assert.equal(n.orders[0].batches[0].attempts,1);assert.equal(n.orders[0].customerPrint!.attempts,1);assert.equal(n.orders[0].customerPrint!.settled,true);});
@@ -30,3 +30,32 @@ test('editing an old draft retains its price/promo snapshot after catalog change
 test('free SKU promo still needs a reason and never creates monetary refund',()=>{const{s,o}=setup(1);s.catalog[1].promos!.Toko!.value=10000;o.units=makeUnits(s,o,s.catalog[1],1,[],'Bungkus','');assert.equal(totals(o).total,0);assert.throws(()=>settle(s,o),/alasan/);const n=reduceAction(s,action('settle',o,{source:'Payment',method:'Tunai',received:''},'Promo gratis disetujui'),'free');assert.equal(n.orders[0].settlement!.source,'Gratis');assert.equal(expected(n),0);assert.equal(n.catalog[1].stock,9);});
 test('type alias is normalized, validates at domain boundary, preserves catalog and history',()=>{const{s,o}=setup(1),catalog=structuredClone(s.catalog),old=structuredClone(o);const n=reduceAction(s,action('settings',null,{typeAliases:{Normal:' n1 '}}),'aliases');assert.deepEqual(n.settings.typeAliases,{Normal:'N1'});assert.deepEqual(n.catalog,catalog);assert.deepEqual(n.orders[0],old);for(const v of ['','NNNN','N!','é'])assert.throws(()=>reduceAction(s,action('settings',null,{typeAliases:{Normal:v}}),'badalias'+v));assert.throws(()=>reduceAction({...s,actor:'a'},action('settings',null,{typeAliases:{Normal:'A'}}),'staffalias'),/owner/);});
 test('new units retain real variant and original type rather than presentation alias',()=>{const{s,o}=setup(1);const unit=makeUnits(s,o,s.catalog.find(x=>x.id==='air')!,1,[],'Bungkus','')[0];assert.equal(unit.name,'Air Mineral · Botol');assert.equal(unit.type,'Normal');});
+
+test('stock count required in new menu and CSV; 0 and 1000 accepted, existing stock preserved',()=>{
+ const s=fixture(),data={code:'NEW',name:'Baru',variant:'Reguler',category:'',price:10000,mode:'quantity'};
+ for(const stock of [undefined,'',null,-1,1.5])assert.throws(()=>reduceAction(s,action('catalog',null,{...data,stock}),'new-'+String(stock)));
+ assert.throws(()=>reduceAction(s,action('catalog',null,{...data,mode:'manual',stock:1000}),'manual'),/wajib dihitung/);
+ for(const stock of [0,1000]){const n=reduceAction(s,action('catalog',null,{...data,stock}),'new-'+stock);assert.equal(n.catalog.at(-1)!.stock,stock);assert.equal(n.stockLedger.at(-1)!.delta,stock);}
+ const sku=s.catalog[1],n=reduceAction(s,action('catalog',null,{...sku,sku:sku.id,stock:999,mode:'quantity'}),'edit');assert.equal(n.catalog[1].stock,10);
+ const header='menu_code,menu_name,category,variant_code,variant_name,price,stock_mode,available,opening_stock,low_stock_threshold';
+ for(const row of ['NEW,Baru,,,,10000,manual,true,,5','NEW,Baru,,,,10000,quantity,true,,5'])assert.ok(previewCSV(header+'\n'+row,s)[0].error);
+ assert.equal(previewCSV(header+'\nNEW,Baru,,,,10000,quantity,true,0,5',s)[0].sku!.stock,0);
+ assert.ok(previewCSV(header+'\nKOPI-B,Kopi,,,,10000,quantity,true,1000,5',s)[0].error);
+});
+test('legacy missing stock cannot sell or commit; explicit count repairs without silently using zero',()=>{
+ const {s,o}=setup(1);const sku=s.catalog[1];(sku as unknown as {stock:null}).stock=null;
+ assert.throws(()=>makeUnits(s,o,sku,1,[],'Bungkus',''),/isi jumlah stok/);
+ assert.throws(()=>settle(s,o),/isi jumlah stok/);assert.equal(s.orders[0].settlement,undefined);assert.equal(s.stockLedger.length,0);
+ const n=reduceAction(s,action('catalog',null,{...sku,sku:sku.id,mode:'quantity',stock:'1000'}),'repair');assert.equal(n.catalog[1].stock,1000);assert.equal(n.stockLedger[0].reason,'Hitungan awal data lama');
+ const paid=settle(n,n.orders[0]);assert.equal(paid.catalog[1].stock,999);assert.equal(paid.orders[0].units[0].debited,true);assert.equal(reduceAction(paid,action('settle',o,{source:'Payment',method:'Tunai',received:'100000'}),'settle'),paid);
+});
+test('tea with large stock debits once, draft and retry do not change inventory',()=>{
+ let s=reduceAction(fixture(),action('open',null,{amount:0}),'open');const o=createOrder(s),tea=s.catalog.find(x=>x.id==='teh')!;o.units=makeUnits(s,o,tea,2,[],'Bungkus','');s.orders.push(o);assert.equal(tea.stock,1000);
+ s=reduceAction(s,action('process',o),'process');assert.equal(s.catalog.find(x=>x.id==='teh')!.stock,998);
+ assert.equal(reduceAction(s,action('process',o),'process'),s);s=settle(s,s.orders[0]);assert.equal(s.catalog.find(x=>x.id==='teh')!.stock,998);assert.equal(s.stockLedger.length,2);
+});
+test('category settings reject reserved and duplicate names atomically',()=>{
+ const s=fixture();for(const menuCategories of [['Promo'],['Minuman','minuman']])assert.throws(()=>reduceAction(s,action('settings',null,{menuCategories}),'settings'));
+ assert.deepEqual(reduceAction(s,action('settings',null,{menuCategories:[]}),'clear').settings.menuCategories,[]);
+ assert.deepEqual(s.settings.menuCategories,['Minuman','Makanan','Camilan']);
+});

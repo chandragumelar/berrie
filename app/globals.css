@@ -265,3 +265,18 @@ input[aria-invalid=true] { border-color:var(--danger-text); }
 /* D-50: opaque bubblegum gradient, sampled from the owner's reference. */
 .catalog,.basket,.panel,.metrics>div,.field>input,.field>textarea,.choice { background-image:var(--bubblegum-gradient); }
 .berrie-dialog,[data-slot=select-content] { background-image:var(--bubblegum-gradient)!important; }
+
+/* D-51: one active filter and a focused purchase cart. */
+.cart-extras { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+.cart-option { min-height:var(--hit); border:1px solid var(--border-control); background:var(--selection-surface); border-radius:999px; padding:.5rem .75rem; font-weight:500; gap:.375rem; }
+.cart-option svg { width:18px; height:18px; flex-shrink:0; }
+.cart-option:hover { background:var(--secondary-hover); }
+.cart-option:active { background:var(--secondary-pressed); }
+.cart-extras .cart-option { width:100%; }
+.basket-items { flex:1 1 auto; min-height:44px; }
+.item-note { margin:.25rem 0 0; line-height:1.43; color:var(--text-primary); white-space:pre-wrap; overflow-wrap:anywhere; }
+.item-note>span { font-weight:500; }
+.pay-later-hint { margin:0; }
+.catalog-category-mobile { grid-template-columns:minmax(0,1fr); }
+@media(max-width:960px) { .basket-items { overflow:visible; } }
+html[data-text-scale="200"] .cart-extras { grid-template-columns:1fr; }

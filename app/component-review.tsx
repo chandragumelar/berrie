@@ -34,7 +34,7 @@ export function ComponentReview({onOpenDialog}:{onOpenDialog:()=>void}) {
    <div className="review-navigation"><button className="nav-button" data-active="true"><ShoppingBag aria-hidden="true"/>Kasir</button><button className="nav-button">Pengaturan</button></div>
    <div className="review-table"><DataTable heads={['Menu','Sisa','Diskon','Rp harga']} label="Fixture komponen">
     <TableRow><TableCell>Es Kopi Susu · Besar</TableCell><TableCell className="amount">10</TableCell><TableCell className="amount">10</TableCell><TableCell className="amount">18.000</TableCell></TableRow>
-    <TableRow><TableCell>Es Teh<small>Stok tidak dihitung</small></TableCell><TableCell/><TableCell className="amount">0</TableCell><TableCell className="amount">5.000</TableCell></TableRow>
+    <TableRow><TableCell>Es Teh</TableCell><TableCell>1000</TableCell><TableCell className="amount">0</TableCell><TableCell className="amount">5.000</TableCell></TableRow>
     <TableRow><TableCell>Kentang Goreng<small>Stok habis</small></TableCell><TableCell className="amount">0</TableCell><TableCell className="amount">0</TableCell><TableCell className="amount">15.000</TableCell></TableRow>
     <TableRow><TableCell>Roti Bakar Cokelat Keju Spesial Keluarga dengan Saus Cokelat dan Taburan Kacang Renyah</TableCell><TableCell className="amount">8</TableCell><TableCell className="amount">0</TableCell><TableCell className="amount">98.765.432</TableCell></TableRow>
    </DataTable></div>
