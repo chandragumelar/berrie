@@ -483,3 +483,31 @@ summary { cursor:pointer;min-height:44px;padding:10px 0; }
 
 .cash-movement { display:grid;gap:12px;border-top:1px solid var(--divider);margin-top:16px;padding-top:16px; }
 .recap-audit summary { min-height:44px;cursor:pointer;padding:12px 0; }
+
+/* Menu D-66: status first, menu name sticky, pricing inside the variant dialog. */
+.menu-sheet th:nth-child(2) { min-width:130px;width:130px; }
+.menu-sheet th:nth-child(3) { min-width:180px;width:180px; }
+.menu-sheet td:nth-child(2),.menu-sheet th:nth-child(2) { position:static; }
+.menu-sheet td:nth-child(3),.menu-sheet th:nth-child(3) { position:sticky;left:44px;background:var(--surface);z-index:1; }
+.menu-sheet th:nth-child(3) { z-index:2; }
+.nav-discount { display:flex;gap:12px;align-items:center;width:100%;padding:8px 12px 8px 42px;background:transparent;text-align:left;min-height:44px; }
+.nav-discount[aria-current=page] { background:var(--fill-control); }
+.nav-collapsed .nav-discount { padding:8px;justify-content:center; }
+.nav-collapsed .nav-discount span { display:none; }
+.variant-price-list { display:grid;gap:0; }
+.variant-price-row { display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr);gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--divider); }
+.variant-price-row strong { font-size:14px;font-weight:500;overflow-wrap:anywhere; }
+.variant-price-row input,.new-menu-dialog input,.new-menu-dialog select { min-height:56px; }
+.additional-price { margin-top:16px; }
+.additional-price summary { min-height:44px;padding:12px 0;color:var(--text-accent);cursor:pointer; }
+.additional-price .field { margin:12px 0; }
+.discount-sheet { min-width:680px; }
+.discount-sheet td { min-height:64px;height:64px;vertical-align:middle; }
+.menu-sheet { min-width:0;width:max-content; }
+.menu-sheet th:nth-child(2) { min-width:120px;width:120px; }
+.menu-sheet th:nth-child(3) { min-width:180px;width:180px; }
+.menu-sheet th:nth-child(4),.menu-sheet th:nth-child(5) { min-width:100px;width:100px; }
+.menu-sheet th:nth-child(6) { min-width:130px;width:130px; }
+.opening-row>span .text-button { display:block; }
+.stock-history summary { min-height:44px;padding:12px 0;cursor:pointer; }
+.menu-sheet th:first-child,.menu-sheet td:first-child { padding-left:0!important;padding-right:0!important; }

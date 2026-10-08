@@ -18,7 +18,7 @@ export function applyMenuGrid(s:State,data:Record<string,unknown>){if(!Array.isA
  applyCatalogEdit(s,{autoCode:true,sku:r.sku,name:r.name,type:r.type,category:r.category,mode:'quantity',threshold:r.threshold,toppings:r.toppings,recipes:r.recipes,stockGroup:group,available:r.available,archived:r.archived,variants:[{sku:r.sku,variant,price:r.price,stock:balance,...Object.fromEntries(Object.entries(r.channelPrices??{}).filter(([ch,value])=>ch!=='Toko'&&Number(value)>0))}]});
  const changed=s.catalog.find(x=>x.id===r.sku)??s.catalog.at(-1)!;changed.flavour=r.flavour.trim();changed.size=r.size.trim();if(variables){changed.variables=variables;changed.variableValues=variableValues;}
  }
- for(const group of groups.keys()){const members=s.catalog.filter(x=>stockKey(x)===group&&!x.archived);if(members.some(x=>JSON.stringify(x.variables)!==JSON.stringify(members[0].variables)))throw Error('Variabel harus sama untuk seluruh kombinasi satu menu.');}
+ for(const group of groups.keys()){const members=s.catalog.filter(x=>stockKey(x)===group&&!x.archived);if(members.some(x=>JSON.stringify(x.variables)!==JSON.stringify(members[0].variables)))throw Error('Varian harus sama untuk seluruh kombinasi satu menu.');}
  for(const group of groups.keys())if(s.catalog.filter(x=>stockKey(x)===group&&!x.archived).length>30)throw Error('Maksimal 30 pilihan untuk satu menu.');
  for(const [group,v] of groups)for(const member of s.catalog.filter(x=>stockKey(x)===group)){member.threshold=v.threshold;member.name=v.name;}
 }

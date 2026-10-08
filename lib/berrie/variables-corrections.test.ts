@@ -23,7 +23,7 @@ test('no variables stays empty; optional value and validation reject free text, 
  assert.equal(combinationKey(vars,{top:['Keju','Jamur']}),combinationKey(vars,{top:['Jamur','Keju'],heat:['Panas']}));
 });
 test('menu save rejects mismatched definitions or duplicate combination atomically',()=>{
- const s=setup(),rows=catalogDraft(s),before=structuredClone(s);rows.at(-1)!.variables![0].name='Berbeda';assert.throws(()=>reduceAction(s,a('menuGrid',{rows},'Harga / impor'),'bad'),/Variabel harus sama/);assert.deepEqual(s,before);
+ const s=setup(),rows=catalogDraft(s),before=structuredClone(s);rows.at(-1)!.variables![0].name='Berbeda';assert.throws(()=>reduceAction(s,a('menuGrid',{rows},'Harga / impor'),'bad'),/Varian harus sama/);assert.deepEqual(s,before);
  const duplicate=menuRows();duplicate[1].variableValues=duplicate[0].variableValues;assert.throws(()=>reduceAction(fixture(),a('menuGrid',{rows:duplicate},'Harga / impor'),'duplicate'),/sel/);
 });
 const withRecap=()=>{let s=setup();s.settings.onlineStockEnabled=true;s.settings.onlineReviewedThrough=Date.now()-120000;s=reduceAction(s,a('onlineRecap',{from:s.settings.onlineReviewedThrough,until:Date.now()-60000,rows:[{group:'pizza',quantity:8}],excludesRecorded:true},'Rekap stok online'),'recap');return s;};
