@@ -4,7 +4,7 @@
 
 ## Cakupan revisi
 
-Satu Buka kas sebagai langkah awal, channel Toko, tabel promo nyata per SKU, keranjang kompak, dua penyajian per item, pembayaran tunai/QRIS dan modal Struk yang menampilkan dua tujuan. Font sistem Apple/Inter dibundel lokal, tombol kapsul, kontrol konsisten dan Lucide mengikuti token design system. Promo SKU tidak digabung diskon order; topping tetap utuh dan snapshot harga lama tidak diganti otomatis. Font 14/18/20/22 sesuai peran, SKU bernama unik, sel numerik, alias tipe, workflow toggle kas dan navigasi kiri yang dapat diciutkan. Lihat [hasil terbaru](REVIEW-KASIR-D55-D56.md); [review versi 1](REVIEW-KASIR.md) dipertahankan.
+Satu Buka kas sebagai langkah awal, channel Toko, tabel promo nyata per SKU, keranjang kompak, dua penyajian per item, pembayaran tunai/QRIS dan modal Struk yang menampilkan dua tujuan. Font sistem Apple/Inter dibundel lokal, tombol kapsul, kontrol konsisten dan Lucide mengikuti token design system. Promo SKU tidak digabung diskon order; topping tetap utuh dan snapshot harga lama tidak diganti otomatis. Font 14/18/20/22 sesuai peran, SKU bernama unik, sel numerik, alias tipe, workflow toggle kas dan navigasi kiri yang dapat diciutkan. Lihat [hasil terbaru](REVIEW-MENU-D57-D60.md); [review versi 1](REVIEW-KASIR.md) dipertahankan.
 
 `app/page.tsx` memuat UI, `app/berrie-controls.tsx` kontrol bersama, `app/component-review.tsx` fixture review terpisah, `lib/berrie/domain.ts` logika simulasi murni dan `app/globals.css` styling. Data bisnis **di memori**; reload menghapus perubahan demo. Tidak membuktikan IndexedDB/offline, autentikasi/izin server, backup, pembayaran nyata, printer fisik atau kesiapan pilot. Panel demo menguji gagal simpan/hasil belum diketahui tanpa transaksi nyata. Data toko contoh mengaktifkan Tunai + QRIS; aktivasi toko baru hanya Tunai.
 
@@ -19,11 +19,11 @@ Dari direktori proyek dengan dependensi terpasang dan Node ≥22.13:
 | `npm run dev -- --host 127.0.0.1 --port 4173` | Preview portable di loopback |
 | `npm run typecheck` | TypeScript strict |
 | `npm run lint` | ESLint |
-| `npm test` | 51 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
+| `npm test` | 64 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
 | `npm run build` | Build lokal, bukan deployment |
 | `npm start` | Preview Worker hasil build di loopback |
 
-Typecheck, lint dan 51 tes domain lulus; identitas hasil terbaru dicatat di review D-49/D-50. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-KASIR-D49.md.
+Typecheck, lint dan 64 tes domain lulus; identitas hasil terbaru dicatat di review D-57–60. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-MENU-D57-D60.md.
 
 ## Penyimpanan dan publikasi
 
@@ -50,3 +50,9 @@ Root `berrie/` belum memiliki Git; direktori `berrie-site/` mempunyai Git sendir
 Root localhost default menampilkan frame tablet landscape **1024×768** termasuk dialog, meski jendela desktop lebih lebar. Buka `http://127.0.0.1:4173/?workspace=responsive` untuk review UI langsung pada ukuran lain. Pembungkus hanya lokal; hosted tetap responsif. Reload menghapus data contoh.
 
 `app/menu-editor.tsx` adalah form tipe/ukuran/topping; `lib/berrie/catalog-editor.ts` menyimpan seluruh SKU form atomik dalam domain simulasi, `menu-config.ts` menangani tipe/kode otomatis dan daftar stok rendah. Notifikasi di aplikasi, tanpa push/WA/email. Build final dan identitas versi layanan dicatat pada tasks.
+
+## Menu dan stok D-57–60
+
+`app/menu-workspace.tsx` menyediakan tabel Menu lima baris per halaman, input 56 px dan baris ≥64 px, dropdown, tempel TSV, duplikat serta penandaan sel salah. Topping/Rincian tombol teks tanpa pill. Tab Stok menggunakan satu saldo untuk seluruh rasa/ukuran menu. `lib/berrie/shared-stock.ts`, `workshop.ts` dan `recipes.ts` memisahkan saldo, perubahan tabel/rekap dan snapshot racikan dari React. Racikan Es/Gula gratis dipilih kasir dan dicetak pada preview struk/dapur. Rekap online mencatat pemakaian per menu dan periode, tanpa omzet/kas; pengingat diaktifkan owner. Semua data tetap simulasi di memori.
+
+Localhost root menyediakan frame tablet 1024×768; `?workspace=tablet` menampilkan workspace langsung untuk pemeriksaan responsif. Model produksi StockGroup/ledger tunggal dan migrasi hitungan fisik belum dibangun.

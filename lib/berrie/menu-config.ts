@@ -1,3 +1,4 @@
+import {stockGroups} from './shared-stock.ts';
 import type {SKU,State} from './domain.ts';
 export const defaultTypes=['Normal','Paket','Promo'];
 export const configuredTypes=(s:State)=>[...new Set([...defaultTypes,...(s.settings.menuTypes??[]),...s.catalog.map(x=>x.type??'Normal')])];
@@ -8,4 +9,4 @@ export function autoAliases(types:string[],existing:Record<string,string>={}){
  return result;
 }
 export function nextSKUCode(catalog:SKU[],alias:string){let sequence=1;while(catalog.some(x=>x.code.toUpperCase()===`${alias}-${String(sequence).padStart(3,'0')}`))sequence++;return `${alias}-${String(sequence).padStart(3,'0')}`;}
-export const lowStockItems=(catalog:SKU[])=>catalog.filter(x=>!x.archived&&Number.isSafeInteger(x.stock)&&x.stock>=0&&x.stock<=x.threshold);
+export const lowStockItems=(catalog:SKU[])=>stockGroups(catalog).filter(x=>Number.isSafeInteger(x.stock)&&x.stock>=0&&x.stock<=x.threshold);
