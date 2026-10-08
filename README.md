@@ -1,10 +1,10 @@
 # Berrie — Prototipe Sites M-03
 
-8 Oktober 2026. Proyek Sites **Berrie · Prototipe Kasir**, `appgprj_6ac54219b9248191bf551b9871d78958`. Versi 1–5 tersimpan tanpa deployment. Revisi D-55/D-56 menambahkan keranjang/detail empat item pendek, identitas wajib, Pesanan default Lunas, form tipe/ukuran/topping dan peringatan stok di aplikasi. Revisi D-53/D-54: panel solid #FCFCFD dan cyan aktif, Kasir/Pesanan/Riwayat ringkas, dapur saja sebelum bayar, riwayat hanya selesai dan refund final setelah uang dikembalikan. [Review terkini](REVIEW-KASIR-D55-D56.md); identitas hasil simpan layanan pada [tasks](../tasks.md). Font Apple system/Inter lokal dan token [design system](../DESIGN-SYSTEM.md) tetap. Visual belum disetujui.
+8 Oktober 2026. Proyek Sites **Berrie · Prototipe Kasir**, `appgprj_6ac54219b9248191bf551b9871d78958`. Versi 1–7 tersimpan tanpa deployment; revisi terkini D-61–65. Revisi D-55/D-56 menambahkan keranjang/detail empat item pendek, identitas wajib, Pesanan default Lunas, form tipe/ukuran/topping dan peringatan stok di aplikasi. Revisi D-53/D-54: panel solid #FCFCFD dan cyan aktif, Kasir/Pesanan/Riwayat ringkas, dapur saja sebelum bayar, riwayat hanya selesai dan refund final setelah uang dikembalikan. [Review terkini](REVIEW-MENU-KAS-D61-D65.md); identitas hasil simpan layanan pada [tasks](../tasks.md). Font Apple system/Inter lokal dan token [design system](../DESIGN-SYSTEM.md) tetap. Visual belum disetujui.
 
 ## Cakupan revisi
 
-Satu Buka kas sebagai langkah awal, channel Toko, tabel promo nyata per SKU, keranjang kompak, dua penyajian per item, pembayaran tunai/QRIS dan modal Struk yang menampilkan dua tujuan. Font sistem Apple/Inter dibundel lokal, tombol kapsul, kontrol konsisten dan Lucide mengikuti token design system. Promo SKU tidak digabung diskon order; topping tetap utuh dan snapshot harga lama tidak diganti otomatis. Font 14/18/20/22 sesuai peran, SKU bernama unik, sel numerik, alias tipe, workflow toggle kas dan navigasi kiri yang dapat diciutkan. Lihat [hasil terbaru](REVIEW-MENU-D57-D60.md); [review versi 1](REVIEW-KASIR.md) dipertahankan.
+Satu Buka kas sebagai langkah awal, channel Toko, tabel promo nyata per SKU, keranjang kompak, dua penyajian per item, pembayaran tunai/QRIS dan modal Struk yang menampilkan dua tujuan. Font sistem Apple/Inter dibundel lokal, tombol kapsul, kontrol konsisten dan Lucide mengikuti token design system. Promo SKU tidak digabung diskon order; topping tetap utuh dan snapshot harga lama tidak diganti otomatis. Font 14/18/20/22 sesuai peran, SKU bernama unik, sel numerik, alias tipe, workflow toggle kas dan navigasi kiri yang dapat diciutkan. Lihat [hasil terbaru](REVIEW-MENU-KAS-D61-D65.md); [review versi 1](REVIEW-KASIR.md) dipertahankan.
 
 `app/page.tsx` memuat UI, `app/berrie-controls.tsx` kontrol bersama, `app/component-review.tsx` fixture review terpisah, `lib/berrie/domain.ts` logika simulasi murni dan `app/globals.css` styling. Data bisnis **di memori**; reload menghapus perubahan demo. Tidak membuktikan IndexedDB/offline, autentikasi/izin server, backup, pembayaran nyata, printer fisik atau kesiapan pilot. Panel demo menguji gagal simpan/hasil belum diketahui tanpa transaksi nyata. Data toko contoh mengaktifkan Tunai + QRIS; aktivasi toko baru hanya Tunai.
 
@@ -19,11 +19,11 @@ Dari direktori proyek dengan dependensi terpasang dan Node ≥22.13:
 | `npm run dev -- --host 127.0.0.1 --port 4173` | Preview portable di loopback |
 | `npm run typecheck` | TypeScript strict |
 | `npm run lint` | ESLint |
-| `npm test` | 64 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
+| `npm test` | 75 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
 | `npm run build` | Build lokal, bukan deployment |
 | `npm start` | Preview Worker hasil build di loopback |
 
-Typecheck, lint dan 64 tes domain lulus; identitas hasil terbaru dicatat di review D-57–60. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-MENU-D57-D60.md.
+Typecheck, lint dan 75 tes domain lulus; identitas hasil terbaru dicatat di review D-61–65. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-MENU-KAS-D61-D65.md.
 
 ## Penyimpanan dan publikasi
 
@@ -56,3 +56,7 @@ Root localhost default menampilkan frame tablet landscape **1024×768** termasuk
 `app/menu-workspace.tsx` menyediakan tabel Menu lima baris per halaman, input 56 px dan baris ≥64 px, dropdown, tempel TSV, duplikat serta penandaan sel salah. Topping/Rincian tombol teks tanpa pill. Tab Stok menggunakan satu saldo untuk seluruh rasa/ukuran menu. `lib/berrie/shared-stock.ts`, `workshop.ts` dan `recipes.ts` memisahkan saldo, perubahan tabel/rekap dan snapshot racikan dari React. Racikan Es/Gula gratis dipilih kasir dan dicetak pada preview struk/dapur. Rekap online mencatat pemakaian per menu dan periode, tanpa omzet/kas; pengingat diaktifkan owner. Semua data tetap simulasi di memori.
 
 Localhost root menyediakan frame tablet 1024×768; `?workspace=tablet` menampilkan workspace langsung untuk pemeriksaan responsif. Model produksi StockGroup/ledger tunggal dan migrasi hitungan fisik belum dibangun.
+
+## UI terkini — D-61–65
+
+`app/menu-workspace.tsx`, `app/variable-editor.tsx` dan `app/variable-picker.tsx` memuat tabel5 baris, + Menu/variabel single-multi/harga kombinasi dan stock modes. `app/cash-workspace.tsx` memisahkan uang selama berjualan dan selesai bertugas. `lib/berrie/menu-variables.ts` + `workshop.ts` memvalidasi kombinasi/snapshot dan koreksi rekap delta/revisi. Tidak ada impor pada UI tahap ini; parser/tes CSV lama tetap sebagai kompatibilitas, bukan fitur aktif. Paste multiline dengan urutan kolom tetap lama diganti pengisian sel/dropdown variabel fleksibel; bulk harga/kategori tetap. Root localhost selalu memakai iframe1024×768. Data contoh hilang saat reload; source/version yang disimpan berbeda dari data demo. Skill UI/UX Pro Max dibaca dari sumber sebagai panduan tambahan, tidak dipasang lokal. Tidak ada deployment.
