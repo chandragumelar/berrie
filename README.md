@@ -1,6 +1,6 @@
 # Berrie — Prototipe Sites M-03
 
-8 Oktober 2026. Proyek Sites **Berrie · Prototipe Kasir**, `appgprj_6ac54219b9248191bf551b9871d78958`. Versi sebelumnya 1–9 tersimpan tanpa deployment; revisi aktif D-67. Identitas simpan berikutnya pada tasks setelah konfirmasi layanan. Revisi D-55/D-56 menambahkan keranjang/detail empat item pendek, identitas wajib, Pesanan default Lunas, form tipe/ukuran/topping dan peringatan stok di aplikasi. Revisi D-53/D-54: panel solid #FCFCFD dan cyan aktif, Kasir/Pesanan/Riwayat ringkas, dapur saja sebelum bayar, riwayat hanya selesai dan refund final setelah uang dikembalikan. [Review terkini](REVIEW-MENU-KAS-D61-D65.md); identitas hasil simpan layanan pada [tasks](../tasks.md). Font Apple system/Inter lokal dan token [design system](../DESIGN-SYSTEM.md) tetap. Visual belum disetujui.
+8 Oktober 2026. Proyek Sites **Berrie · Prototipe Kasir**, `appgprj_6ac54219b9248191bf551b9871d78958`. Versi sebelumnya 1–9 tersimpan tanpa deployment; revisi aktif D-69. Identitas simpan berikutnya pada tasks setelah konfirmasi layanan. Revisi D-55/D-56 menambahkan keranjang/detail empat item pendek, identitas wajib, Pesanan default Lunas, form tipe/ukuran/topping dan peringatan stok di aplikasi. Revisi D-53/D-54: panel solid #FCFCFD dan cyan aktif, Kasir/Pesanan/Riwayat ringkas, dapur saja sebelum bayar, riwayat hanya selesai dan refund final setelah uang dikembalikan. [Review terkini](REVIEW-MENU-KAS-D61-D65.md); identitas hasil simpan layanan pada [tasks](../tasks.md). Font Apple system/Inter lokal dan token [design system](../DESIGN-SYSTEM.md) tetap. Visual belum disetujui.
 
 ## Cakupan revisi
 
@@ -19,7 +19,7 @@ Dari direktori proyek dengan dependensi terpasang dan Node ≥22.13:
 | `npm run dev -- --host 127.0.0.1 --port 4173` | Preview portable di loopback |
 | `npm run typecheck` | TypeScript strict |
 | `npm run lint` | ESLint |
-| `npm test` | 95 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
+| `npm test` | 99 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
 | `npm run build` | Build lokal, bukan deployment |
 | `npm start` | Preview Worker hasil build di loopback |
 
@@ -74,3 +74,8 @@ D-67 mendahului checkbox/bulk/preset/harga kombinasi manual/stok dua kegiatan da
 Hapus paling kiri/log tanggal-jam-pelaku; Batal/Simpan simetris hanya saat berubah; kategori wajib/tambah inline/CRUD kategori dan tipe; field stok berbingkai tanpa Ubah dan harga rata kiri. Diskon pustaka persen/potongan/Beli X gratis Y, penetapan di samping Varian/per channel, `-` kosong. Beli2 gratis3 berarti qty5 bayar menu2, topping penuh, stok5; snapshot/alokasi refund tetap. Kas mencatat pembuka/waktu dan menjelaskan sumber saldo agar tidak terhitung dua kali.
 
 `app/taxonomy-workspace.tsx`, `discount-workspace.tsx` memuat UI; `lib/berrie/taxonomy.ts`, `discounts.ts` memisahkan validasi/penetapan/alokasi dari React. 95 tes domain; pemeriksaan browser/build/identitas simpan beserta batas pada [review D-68](REVIEW-MENU-KAS-D68.md) dan tasks root. Localhost tetap tablet1024×768, data simulasi memori; tanpa deployment.
+
+
+## Revisi aktif D-69 (10 Oktober 2026)
+
+Jadwal Diskon opsional dalam zona toko (mulai inklusif/selesai eksklusif) dinilai saat quote; item lama tetap snapshot, refresh draft eksplisit. `lib/berrie/local-date.ts` mengonversi input tanggal/jam tanpa bergantung zona browser; `app/use-minute-clock.ts` menyegarkan tampilan saat batas menit/fokus. Prototipe memakai jam perangkat dan data memori, bukan bukti waktu tepercaya/offline produksi. Copy Diskon/Varian/Kas diringkas, Menu/Stok/Rekap memakai gulir vertikal/header sticky; periode rekap sejajar. Kas belum pernah dibuka memakai satu panel/CTA, kas aktif fullwidth/satu saldo bawah breakdown, finish dua jalur pendek dan riwayat disclosure. Label input hitungan akhir dan blocker tetap. [Review D-69](REVIEW-MENU-KAS-D69.md), identitas simpan pada tasks. Root localhost iframe1024×768 tetap; tanpa deployment. Skill UI/UX Pro Max terpasang global sesuai instruksi pemilik, tanpa mengubah token proyek.

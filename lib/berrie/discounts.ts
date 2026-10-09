@@ -3,7 +3,11 @@ export function validateDiscount(input:Record<string,unknown>,existing?:Discount
  const name=String(input.name??'').trim(),mode=input.mode as DiscountDefinition['mode'];
  if(!name||name.length>80)throw Error('Isi nama diskon 1–80 karakter.');
  if(!['percent','amount','bogo'].includes(mode))throw Error('Pilih jenis diskon.');
- return {id:existing?.id??id(),name,mode,value:mode==='bogo'?0:integer(input.value,1,mode==='percent'?10000:999999999),buy:mode==='bogo'?integer(input.buy,1,99):undefined,free:mode==='bogo'?integer(input.free,1,99):undefined,revision:(existing?.revision??0)+1,archived:false};
+ const hasStart=input.startsAt!==undefined&&input.startsAt!==null&&input.startsAt!=='',hasEnd=input.endsAt!==undefined&&input.endsAt!==null&&input.endsAt!=='';
+ if(hasStart!==hasEnd)throw Error('Lengkapi tanggal dan jam mulai serta selesai.');
+ const startsAt=hasStart?integer(input.startsAt,0,8640000000000000):undefined,endsAt=hasEnd?integer(input.endsAt,0,8640000000000000):undefined;
+ if(startsAt!==undefined&&(startsAt%60000!==0||endsAt!%60000!==0||endsAt!<=startsAt))throw Error('Waktu selesai harus setelah waktu mulai, dengan ketelitian menit.');
+ return {id:existing?.id??id(),name,mode,startsAt,endsAt,value:mode==='bogo'?0:integer(input.value,1,mode==='percent'?10000:999999999),buy:mode==='bogo'?integer(input.buy,1,99):undefined,free:mode==='bogo'?integer(input.free,1,99):undefined,revision:(existing?.revision??0)+1,archived:false};
 }
 export function assignDiscount(s:State,sku:SKU,channel:Channel,definition:string){
  if(!['Toko','GoFood','GrabFood','ShopeeFood'].includes(channel)||typeof definition!=='string')throw Error('Pilihan diskon / channel tidak sah.');
@@ -12,7 +16,7 @@ export function assignDiscount(s:State,sku:SKU,channel:Channel,definition:string
  if(d)integer(sku.channelPrices[channel],1);
  if(d?.mode==='amount'&&d.value>sku.channelPrices[channel])throw Error(`${sku.name}: potongan melebihi harga ${channel}.`);
  sku.discountAssignments={...sku.discountAssignments,[channel]:definition};
- sku.promos={...sku.promos,[channel]:d?{definition:d.id,name:d.name,mode:d.mode,value:d.value,buy:d.buy,free:d.free,revision:(sku.promos?.[channel]?.revision??0)+1,active:true}:{mode:'none',name:'',value:0,revision:(sku.promos?.[channel]?.revision??0)+1,active:false}};
+ sku.promos={...sku.promos,[channel]:d?{definition:d.id,name:d.name,startsAt:d.startsAt,endsAt:d.endsAt,mode:d.mode,value:d.value,buy:d.buy,free:d.free,revision:(sku.promos?.[channel]?.revision??0)+1,active:true}:{mode:'none',name:'',value:0,revision:(sku.promos?.[channel]?.revision??0)+1,active:false}};
 }
 export function applyDiscountDefinition(s:State,input:Record<string,unknown>){
  const old=(s.discounts??[]).find(x=>x.id===input.id);
