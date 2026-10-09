@@ -551,3 +551,49 @@ summary { cursor:pointer;min-height:44px;padding:10px 0; }
 .menu-name-cell { display:flex;align-items:center;gap:4px; }
 .menu-name-cell .grid-cell { flex:1;min-width:0; }
 .menu-sheet .menu-name-cell .icon-button { width:44px;min-width:44px;padding:8px;color:var(--danger-text); }
+
+/* D-68: clear editable cells, contextual save pair, leftmost delete. */
+.menu-sheet th:first-child { width:44px;min-width:44px; }
+.menu-sheet th:nth-child(2) { width:124px;min-width:124px; }
+.menu-sheet th:nth-child(3) { width:180px;min-width:180px; }
+.menu-sheet th:nth-child(4) { width:120px;min-width:120px; }
+.menu-sheet th:nth-child(5) { width:150px;min-width:150px; }
+.menu-sheet th:nth-child(6) { width:105px;min-width:105px; }
+.menu-sheet th:nth-child(7) { width:130px;min-width:130px; }
+.menu-sheet td:nth-child(2),.menu-sheet th:nth-child(2) { position:static; }
+.menu-sheet td:nth-child(3),.menu-sheet th:nth-child(3) { position:sticky;left:44px;background:var(--surface);z-index:1; }
+.menu-sheet td:first-child,.menu-sheet th:first-child { position:sticky;left:0;background:var(--surface);z-index:2; }
+.menu-sheet th:nth-child(3) { z-index:2; }
+.menu-sheet .icon-button.danger { color:var(--danger-text);width:44px;padding:8px; }
+.save-action-pair { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:300px;margin-left:auto; }
+.save-action-pair>button { min-height:48px;padding:12px 16px;white-space:nowrap; }
+.workspace-save { gap:8px; }
+.workspace-save .save-action-pair { flex:0 0 310px; }
+.menu-save { position:static;padding:8px 0 0; }
+.stock-overview .stock-price { text-align:left;font-variant-numeric:tabular-nums;white-space:nowrap; }
+.stock-baseline-button,.editable-cell { text-align:left;min-height:56px;border:1px solid var(--border-control);border-radius:8px;background:var(--surface);color:var(--text-primary);font-weight:400;justify-content:flex-start; }
+.stock-baseline-button:hover,.editable-cell:hover { background:var(--fill-hover); }
+.stock-overview input.editable-number { text-align:left;border-radius:8px; }
+.stock-overview td:last-child { text-align:left; }
+.inline-choice { min-width:0;width:100%; }
+.inline-choice select { width:100%; }
+.inline-choice .inline { gap:4px;margin-top:4px; }
+.inline-choice .inline button { min-width:44px;min-height:44px;padding:8px; }
+.taxonomy-add,.taxonomy-row { display:flex;align-items:flex-end;gap:8px;margin-bottom:12px; }
+.taxonomy-add .field,.taxonomy-row .field { flex:1;min-width:0;margin:0; }
+.taxonomy-row .icon-button { flex:0 0 44px;margin-bottom:4px; }
+.discount-library { width:100%; }
+.discount-library th:first-child { width:42%; }
+.discount-library td { height:64px;vertical-align:middle; }
+.discount-library .editable-cell { width:100%;padding:12px; }
+.quantity-promo-inputs { flex-wrap:nowrap; }
+.quantity-promo-inputs .field { flex:1;min-width:0; }
+.cash-balance .totals dt small { display:block;line-height:1.43;color:var(--text-secondary);font-weight:400;margin-top:4px; }
+.cash-balance .totals>div { align-items:start;padding:8px 0;gap:16px; }
+.cash-balance .totals dd { white-space:nowrap; }
+@media(max-width:600px) { .save-action-pair { min-width:0;width:100%; }.workspace-save .save-action-pair { flex:1 1 100%; }.taxonomy-row { flex-wrap:wrap; } }
+.save-action-pair>button { width:100%;min-width:0;max-width:none;box-sizing:border-box; }
+.workspace-save .save-action-pair { flex-basis:340px; }
+
+.menu-sheet td:nth-child(3) { min-width:180px; }
+.menu-sheet td:nth-child(5) { min-width:150px; }

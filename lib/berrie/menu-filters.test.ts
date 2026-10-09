@@ -21,11 +21,10 @@ test('category settings validate at mutation boundary without altering SKU or hi
  assert.throws(()=>validateMenuCategories(['Promo']),/tab tetap/);
  assert.throws(()=>validateMenuCategories(['Kopi',' kopi ']),/unik/);
  assert.throws(()=>validateMenuCategories(['x'.repeat(41)]),/40/);
- const s=fixture(),n=reduceAction(s,{kind:'settings',activity:'Pengaturan',data:{menuCategories:[' Kopi ','Teh']},reason:'',amount:0},'categories');
- assert.deepEqual(n.settings.menuCategories,['Kopi','Teh']);assert.deepEqual(n.catalog,s.catalog);
- assert.deepEqual(menuTabs(n.settings.menuCategories!),['Semua','Kopi','Teh','Habis','Promo']);
- const cleared=reduceAction(n,{kind:'settings',activity:'Pengaturan',data:{menuCategories:[]},reason:'',amount:0},'clear');
- assert.deepEqual(menuTabs(cleared.settings.menuCategories!),['Semua','Habis','Promo']);
+ const s=fixture(),n=reduceAction(s,{kind:'settings',activity:'Pengaturan',data:{menuCategories:['Minuman','Makanan','Camilan',' Kopi ','Teh']},reason:'',amount:0},'categories');
+ assert.deepEqual(n.settings.menuCategories,['Minuman','Makanan','Camilan','Kopi','Teh']);assert.deepEqual(n.catalog,s.catalog);
+ assert.deepEqual(menuTabs(n.settings.menuCategories!),['Semua','Minuman','Makanan','Camilan','Kopi','Teh','Habis','Promo']);
+ assert.throws(()=>reduceAction(n,{kind:'settings',activity:'Pengaturan',data:{menuCategories:[]},reason:'',amount:0},'clear'),/masih dipakai/);
 });
 test('generic variant is omitted while actual variants and snapshots stay distinguishable',()=>{
  const s=fixture(),o=createOrder(s),banana=s.catalog.find(x=>x.id==='pisang')!,coffee=s.catalog.find(x=>x.id==='kopi-b')!;

@@ -19,11 +19,11 @@ Dari direktori proyek dengan dependensi terpasang dan Node ≥22.13:
 | `npm run dev -- --host 127.0.0.1 --port 4173` | Preview portable di loopback |
 | `npm run typecheck` | TypeScript strict |
 | `npm run lint` | ESLint |
-| `npm test` | 83 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
+| `npm test` | 95 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
 | `npm run build` | Build lokal, bukan deployment |
 | `npm start` | Preview Worker hasil build di loopback |
 
-Typecheck, lint dan 83 tes domain lulus; identitas hasil terbaru dicatat di review D-61–65. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-MENU-KAS-D61-D65.md.
+Typecheck, lint dan 95 tes domain lulus; bukti terbaru pada REVIEW-MENU-KAS-D68.md. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-MENU-KAS-D68.md.
 
 ## Penyimpanan dan publikasi
 
@@ -34,7 +34,7 @@ Typecheck, lint dan 83 tes domain lulus; identitas hasil terbaru dicatat di revi
 | Lokasi | Fungsi |
 | --- | --- |
 | `app/page.tsx`, `app/layout.tsx`, `app/globals.css` | UI, metadata dan style prototipe |
-| `lib/berrie/domain.ts`, `catalog.ts`, `aliases.ts`, `*.test.ts` | Domain simulasi dan 83 tes |
+| `lib/berrie/domain.ts`, `catalog.ts`, `aliases.ts`, `*.test.ts` | Domain simulasi dan 95 tes |
 | `components/ui/`, `hooks/use-mobile.ts`, `lib/utils.ts` | Komponen UI terpakai beserta dependensinya |
 | `public/fonts/InterVariable.woff2`, `OFL.txt` | Inter variable lokal dan lisensi OFL; tanpa CDN font saat membuka Kasir |
 | `public/favicon.svg` | Favicon Berrie yang direferensikan metadata |
@@ -65,6 +65,12 @@ Localhost root menyediakan frame tablet 1024×768; `?workspace=tablet` menampilk
 
 + Menu membuka modal dengan Batal; menu baru tampil paling atas termasuk setelah Simpan perubahan. Batal tambah menu tersedia sebelum commit. Kolom Status/Menu/Varian/Harga/Kategori, lalu pilihan/harga channel/Tipe. Varian → nama/pilihan → Lanjut ke harga → Terapkan varian & harga; daftar harga di dialog tanpa + Kombinasi. Pilihan tunggal otomatis, topping multi melalui Harga untuk pilihan lain, harga baru wajib diisi. Diskon sub sendiri di sidebar/workspace; Rincian dihapus, opname dan perubahan stok hanya tab Stok. Token/five rows/tablet tetap. Domain tambahan `variant-prices.ts` menjaga harga/ID/saldo dan batas daftar, tes total77. [Review D-66](REVIEW-MENU-D66.md), identitas simpan pada tasks. Tetap data contoh di memori; tanpa deployment.
 
-## Revisi aktif — D-67 (9 Oktober 2026)
+## Revisi sebelumnya — D-67 (9 Oktober 2026)
 
 D-67 mendahului checkbox/bulk/preset/harga kombinasi manual/stok dua kegiatan dan sub Diskon pada catatan historis di atas. Menu dua status sel berwarna, Hapus menu berkonfirmasi/histori tetap dan Batal perubahan. Varian satu modal harga dasar + tambahan per pilihan≥0/default pertama berbintang. Stok satu row/menu dengan baseline editable lewat modal alasan/log, minimal editable dan sisa read-only. Diskon tujuan utama; tiga copy rekap dihapus. Domain `option-prices.ts` mempertahankan harga legacy bila aditif dan menahan konflik. [Review D-67](REVIEW-MENU-D67.md). Data contoh memori, localhost tetap frame1024×768; tidak ada deployment.
+
+## Revisi aktif — D-68 (9 Oktober 2026)
+
+Hapus paling kiri/log tanggal-jam-pelaku; Batal/Simpan simetris hanya saat berubah; kategori wajib/tambah inline/CRUD kategori dan tipe; field stok berbingkai tanpa Ubah dan harga rata kiri. Diskon pustaka persen/potongan/Beli X gratis Y, penetapan di samping Varian/per channel, `-` kosong. Beli2 gratis3 berarti qty5 bayar menu2, topping penuh, stok5; snapshot/alokasi refund tetap. Kas mencatat pembuka/waktu dan menjelaskan sumber saldo agar tidak terhitung dua kali.
+
+`app/taxonomy-workspace.tsx`, `discount-workspace.tsx` memuat UI; `lib/berrie/taxonomy.ts`, `discounts.ts` memisahkan validasi/penetapan/alokasi dari React. 95 tes domain; pemeriksaan browser/build/identitas simpan beserta batas pada [review D-68](REVIEW-MENU-KAS-D68.md) dan tasks root. Localhost tetap tablet1024×768, data simulasi memori; tanpa deployment.

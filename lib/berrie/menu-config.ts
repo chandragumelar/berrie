@@ -1,7 +1,7 @@
 import {stockGroups} from './shared-stock.ts';
 import type {SKU,State} from './domain.ts';
 export const defaultTypes=['Normal','Paket','Promo'];
-export const configuredTypes=(s:State)=>[...new Set([...defaultTypes,...(s.settings.menuTypes??[]),...s.catalog.map(x=>x.type??'Normal')])];
+export const configuredTypes=(s:State)=>[...new Set([...(s.settings.menuTypes??defaultTypes),...s.catalog.filter(x=>!x.archived).map(x=>x.type??'Normal')])];
 export function typeLabel(value:unknown){const name=String(value??'Normal').trim();if(!name||name.length>40||!/^[\p{L}\p{N}][\p{L}\p{N} .&-]*$/u.test(name))throw Error('Nama tipe wajib 1–40 huruf/angka, tanpa simbol khusus.');return name;}
 export function autoAliases(types:string[],existing:Record<string,string>={}){
  const result={...existing},used=new Set(Object.values(existing).map(x=>x.toUpperCase()));

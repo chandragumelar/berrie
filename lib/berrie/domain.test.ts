@@ -32,7 +32,7 @@ test('type alias is normalized, validates at domain boundary, preserves catalog 
 test('new units retain real variant and original type rather than presentation alias',()=>{const{s,o}=setup(1);const unit=makeUnits(s,o,s.catalog.find(x=>x.id==='air')!,1,[],'Bungkus','')[0];assert.equal(unit.name,'Air Mineral · Botol');assert.equal(unit.type,'Normal');});
 
 test('stock count required in new menu and CSV; 0 and 1000 accepted, existing stock preserved',()=>{
- const s=fixture(),data={code:'NEW',name:'Baru',variant:'Reguler',category:'',price:10000,mode:'quantity'};
+ const s=fixture(),data={code:'NEW',name:'Baru',variant:'Reguler',category:'Minuman',price:10000,mode:'quantity'};
  for(const stock of [undefined,'',null,-1,1.5])assert.throws(()=>reduceAction(s,action('catalog',null,{...data,stock}),'new-'+String(stock)));
  assert.throws(()=>reduceAction(s,action('catalog',null,{...data,mode:'manual',stock:1000}),'manual'),/wajib dihitung/);
  for(const stock of [0,1000]){const n=reduceAction(s,action('catalog',null,{...data,stock}),'new-'+stock);assert.equal(n.catalog.at(-1)!.stock,stock);assert.equal(n.stockLedger.at(-1)!.delta,stock);}
@@ -56,7 +56,7 @@ test('tea with large stock debits once, draft and retry do not change inventory'
 });
 test('category settings reject reserved and duplicate names atomically',()=>{
  const s=fixture();for(const menuCategories of [['Promo'],['Minuman','minuman']])assert.throws(()=>reduceAction(s,action('settings',null,{menuCategories}),'settings'));
- assert.deepEqual(reduceAction(s,action('settings',null,{menuCategories:[]}),'clear').settings.menuCategories,[]);
+ assert.throws(()=>reduceAction(s,action('settings',null,{menuCategories:[]}),'clear'),/masih dipakai/);
  assert.deepEqual(s.settings.menuCategories,['Minuman','Makanan','Camilan']);
 });
 
