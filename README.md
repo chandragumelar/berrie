@@ -1,6 +1,6 @@
 # Berrie — Prototipe Sites M-03
 
-8 Oktober 2026. Proyek Sites **Berrie · Prototipe Kasir**, `appgprj_6ac54219b9248191bf551b9871d78958`. Versi 1–8 tersimpan tanpa deployment; revisi lokal terkini D-66. Identitas simpan berikutnya pada tasks setelah konfirmasi layanan. Revisi D-55/D-56 menambahkan keranjang/detail empat item pendek, identitas wajib, Pesanan default Lunas, form tipe/ukuran/topping dan peringatan stok di aplikasi. Revisi D-53/D-54: panel solid #FCFCFD dan cyan aktif, Kasir/Pesanan/Riwayat ringkas, dapur saja sebelum bayar, riwayat hanya selesai dan refund final setelah uang dikembalikan. [Review terkini](REVIEW-MENU-KAS-D61-D65.md); identitas hasil simpan layanan pada [tasks](../tasks.md). Font Apple system/Inter lokal dan token [design system](../DESIGN-SYSTEM.md) tetap. Visual belum disetujui.
+8 Oktober 2026. Proyek Sites **Berrie · Prototipe Kasir**, `appgprj_6ac54219b9248191bf551b9871d78958`. Versi sebelumnya 1–9 tersimpan tanpa deployment; revisi aktif D-67. Identitas simpan berikutnya pada tasks setelah konfirmasi layanan. Revisi D-55/D-56 menambahkan keranjang/detail empat item pendek, identitas wajib, Pesanan default Lunas, form tipe/ukuran/topping dan peringatan stok di aplikasi. Revisi D-53/D-54: panel solid #FCFCFD dan cyan aktif, Kasir/Pesanan/Riwayat ringkas, dapur saja sebelum bayar, riwayat hanya selesai dan refund final setelah uang dikembalikan. [Review terkini](REVIEW-MENU-KAS-D61-D65.md); identitas hasil simpan layanan pada [tasks](../tasks.md). Font Apple system/Inter lokal dan token [design system](../DESIGN-SYSTEM.md) tetap. Visual belum disetujui.
 
 ## Cakupan revisi
 
@@ -19,11 +19,11 @@ Dari direktori proyek dengan dependensi terpasang dan Node ≥22.13:
 | `npm run dev -- --host 127.0.0.1 --port 4173` | Preview portable di loopback |
 | `npm run typecheck` | TypeScript strict |
 | `npm run lint` | ESLint |
-| `npm test` | 77 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
+| `npm test` | 83 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
 | `npm run build` | Build lokal, bukan deployment |
 | `npm start` | Preview Worker hasil build di loopback |
 
-Typecheck, lint dan 77 tes domain lulus; identitas hasil terbaru dicatat di review D-61–65. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-MENU-KAS-D61-D65.md.
+Typecheck, lint dan 83 tes domain lulus; identitas hasil terbaru dicatat di review D-61–65. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-MENU-KAS-D61-D65.md.
 
 ## Penyimpanan dan publikasi
 
@@ -34,7 +34,7 @@ Typecheck, lint dan 77 tes domain lulus; identitas hasil terbaru dicatat di revi
 | Lokasi | Fungsi |
 | --- | --- |
 | `app/page.tsx`, `app/layout.tsx`, `app/globals.css` | UI, metadata dan style prototipe |
-| `lib/berrie/domain.ts`, `catalog.ts`, `aliases.ts`, `*.test.ts` | Domain simulasi dan 51 tes |
+| `lib/berrie/domain.ts`, `catalog.ts`, `aliases.ts`, `*.test.ts` | Domain simulasi dan 83 tes |
 | `components/ui/`, `hooks/use-mobile.ts`, `lib/utils.ts` | Komponen UI terpakai beserta dependensinya |
 | `public/fonts/InterVariable.woff2`, `OFL.txt` | Inter variable lokal dan lisensi OFL; tanpa CDN font saat membuka Kasir |
 | `public/favicon.svg` | Favicon Berrie yang direferensikan metadata |
@@ -64,3 +64,7 @@ Localhost root menyediakan frame tablet 1024×768; `?workspace=tablet` menampilk
 ## Revisi Menu D-66
 
 + Menu membuka modal dengan Batal; menu baru tampil paling atas termasuk setelah Simpan perubahan. Batal tambah menu tersedia sebelum commit. Kolom Status/Menu/Varian/Harga/Kategori, lalu pilihan/harga channel/Tipe. Varian → nama/pilihan → Lanjut ke harga → Terapkan varian & harga; daftar harga di dialog tanpa + Kombinasi. Pilihan tunggal otomatis, topping multi melalui Harga untuk pilihan lain, harga baru wajib diisi. Diskon sub sendiri di sidebar/workspace; Rincian dihapus, opname dan perubahan stok hanya tab Stok. Token/five rows/tablet tetap. Domain tambahan `variant-prices.ts` menjaga harga/ID/saldo dan batas daftar, tes total77. [Review D-66](REVIEW-MENU-D66.md), identitas simpan pada tasks. Tetap data contoh di memori; tanpa deployment.
+
+## Revisi aktif — D-67 (9 Oktober 2026)
+
+D-67 mendahului checkbox/bulk/preset/harga kombinasi manual/stok dua kegiatan dan sub Diskon pada catatan historis di atas. Menu dua status sel berwarna, Hapus menu berkonfirmasi/histori tetap dan Batal perubahan. Varian satu modal harga dasar + tambahan per pilihan≥0/default pertama berbintang. Stok satu row/menu dengan baseline editable lewat modal alasan/log, minimal editable dan sisa read-only. Diskon tujuan utama; tiga copy rekap dihapus. Domain `option-prices.ts` mempertahankan harga legacy bila aditif dan menahan konflik. [Review D-67](REVIEW-MENU-D67.md). Data contoh memori, localhost tetap frame1024×768; tidak ada deployment.

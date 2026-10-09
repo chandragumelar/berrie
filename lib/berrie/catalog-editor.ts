@@ -1,4 +1,4 @@
-import {stockKey,groupBalance} from './shared-stock.ts';
+import {stockKey,groupBalance,stockBaseline} from './shared-stock.ts';
 import {validateRecipes} from './recipes.ts';
 import {integer,id,hasCountedStock,type State,type SKU,type Channel} from './domain.ts';
 import {autoAliases,configuredTypes,nextSKUCode,typeLabel} from './menu-config.ts';
@@ -28,10 +28,10 @@ export function applyCatalogEdit(s:State,d:Record<string,unknown>){
   for(const ch of ['GoFood','GrabFood','ShopeeFood'] as const){const value=row[ch]??d[ch]??(d.channelPrices as Partial<Record<Channel,number>>|undefined)?.[ch];if((s.settings.enabledChannels??[]).includes(ch)&&!value)throw Error(`Isi harga ${ch} untuk ${variant}.`);channelPrices[ch]=value!==undefined&&value!==''?integer(value,1):sku?.channelPrices[ch]??0;}
   const group=sku?.stockGroup??(d.stockGroup?String(d.stockGroup):undefined),member=group?s.catalog.find(x=>stockKey(x)===group):undefined;
   if(sku&&d.stockGroup&&stockKey(sku)!==d.stockGroup)throw Error('Grup stok existing tidak dapat dipindah tanpa hitungan fisik.');
-  const value:SKU={stockGroup:group,flavour:sku?.flavour,size:sku?.size,recipes:d.recipes===undefined?sku?.recipes??[]:validateRecipes(d.recipes),type,promos:sku?.promos??{},id:sku?.id??id(),code,name,variant,category,price,stock:sku&&!hasCountedStock(sku)?integer(row.stock??d.stock):member?groupBalance(s,member):sku&&hasCountedStock(sku)?sku.stock:integer(row.stock??d.stock),available:d.available!==false,archived:!!d.archived,threshold:integer(d.threshold??5),channelPrices,toppings:d.toppings===undefined&&!newToppings.length?sku?.toppings??[]:toppingIds};
+  const value:SKU={stockBaseline:sku&&!hasCountedStock(sku)?integer(row.stock??d.stock):sku?.stockBaseline??(member&&hasCountedStock(member)?stockBaseline(s,member):integer(row.stock??d.stock)),stockGroup:group,flavour:sku?.flavour,size:sku?.size,recipes:d.recipes===undefined?sku?.recipes??[]:validateRecipes(d.recipes),type,promos:sku?.promos??{},id:sku?.id??id(),code,name,variant,category,price,stock:sku&&!hasCountedStock(sku)?integer(row.stock??d.stock):member?groupBalance(s,member):sku&&hasCountedStock(sku)?sku.stock:integer(row.stock??d.stock),available:d.available!==false,archived:!!d.archived,threshold:integer(d.threshold??5),channelPrices,toppings:d.toppings===undefined&&!newToppings.length?sku?.toppings??[]:toppingIds};
   const repaired=!!sku&&!hasCountedStock(sku);
   if(repaired){for(const other of s.catalog.filter(x=>group&&stockKey(x)===group))other.stock=value.stock;}
-  if(repaired||!sku&&!member)s.stockLedger.push({group,sku:value.id,delta:value.stock,reason:sku?'Hitungan awal data lama':'Stok awal',time:Date.now(),reference:code});
+  if(repaired||!sku&&!member)s.stockLedger.push({group,sku:value.id,delta:value.stock,actor:s.actor,before:0,after:value.stock,reason:sku?'Hitungan awal data lama':'Stok awal',time:Date.now(),reference:code});
   if(sku)s.catalog[s.catalog.indexOf(sku)]=value;else s.catalog.push(value);
  }
 }
