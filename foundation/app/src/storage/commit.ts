@@ -9,10 +9,19 @@ export function canonical(value:unknown):string {
  if(typeof value==='object' && Object.getPrototypeOf(value)===Object.prototype) { const obj=value as Record<string,unknown>; return `{${Object.keys(obj).sort().map(k=>`${JSON.stringify(k)}:${canonical(obj[k])}`).join(',')}}`; }
  throw new Error('Data operasi tidak sah');
 }
+function copyInput(value:unknown):unknown {
+ if(Array.isArray(value)) return value.map(copyInput);
+ if(value!==null && typeof value==='object') {
+  if(Object.getPrototypeOf(value)!==Object.prototype) throw new Error('Data operasi tidak sah');
+  return Object.fromEntries(Object.keys(value).map(key=>[key,copyInput((value as Record<string,unknown>)[key])]));
+ }
+ return value;
+}
 function validId(id:unknown): id is string { return typeof id==='string' && id.trim().length>0 && id.length<=200; }
 function positive(v:unknown, min=1):v is number { return typeof v==='number' && Number.isSafeInteger(v) && v>=min; }
 /** Internal primitive. T-04 must authorize every business command before it reaches this layer. */
-export async function commitChange(db:BerrieDatabase, change:AtomicChange, locks:LockProvider = navigator.locks):Promise<unknown> {
+export async function commitChange(db:BerrieDatabase, input:AtomicChange, locks:LockProvider = navigator.locks):Promise<unknown> {
+ const change=copyInput(input) as AtomicChange;
  if(!locks || typeof locks.request!=='function') throw new Error('Penguncian penulis tidak tersedia');
  if(![change.operationId,change.storeId,change.deviceId,change.kind,change.targetId,change.actorId].every(validId) || !positive(change.deviceEpoch) || !positive(change.localSequence) || !positive(change.policyVersion) || !Array.isArray(change.state) || !change.state.length || !Array.isArray(change.ledger) || !Array.isArray(change.audit) || !change.audit.length || !change.outbox || change.outbox.operationId!==change.operationId) throw new Error('Envelope operasi tidak sah');
  if(new Set(change.state.map(x=>x.key)).size!==change.state.length || change.state.some(x=>!validId(x.key) || (x.expectedRevision!==null && !positive(x.expectedRevision,0)))) throw new Error('Revisi state tidak sah');

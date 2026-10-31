@@ -27,3 +27,17 @@ test('checkpoint JSON disimpan di staging dan bertahan setelah database dibuka k
  });
  expect(evidence.restored).toEqual(evidence.original);expect(evidence.sourceAfter).toEqual(evidence.original);expect(evidence.rejected).toBe(true);expect(evidence.empty).toEqual({schema:1,state:[],ledger:[],audit:[],outbox:[],receipts:[],sequences:[]});
 });
+test('mutasi input saat menunggu Web Lock tidak mengubah commit',async({page})=>{
+ await page.goto('/');const evidence=await page.evaluate(async()=>{
+  const {BerrieDatabase}=await import('/src/storage/database.ts');const {commitChange}=await import('/src/storage/commit.ts');const {checkpoint,stageSnapshot}=await import('/src/storage/recovery.ts');const {validateCheckpoint}=await import('/src/storage/validate-checkpoint.ts');
+  const name=`lock-input-${crypto.randomUUID()}`,db=new BerrieDatabase(name),stage=new BerrieDatabase(name+'-stage');
+  let release!:()=>void,acquired!:()=>void;const gate=new Promise<void>(r=>{release=r}),ready=new Promise<void>(r=>{acquired=r});
+  const holder=navigator.locks.request(`berrie-writer:${name}`,async()=>{acquired();await gate});await ready;
+  const input={operationId:'op',storeId:'s',deviceId:'d',deviceEpoch:1,localSequence:1,kind:'test',targetId:'stock',actorId:'a',policyVersion:1,payload:{nested:{qty:1}},state:[{key:'stock',expectedRevision:null,value:{qty:9}}],ledger:[{id:'l',operationId:'op',value:{qty:-1}}],audit:[{id:'a',operationId:'op',value:{action:'before'}}],outbox:{id:'o',operationId:'op',value:{action:'before'}},result:{nested:{ok:true}}};const original=structuredClone(input);
+  try {
+   const pending=commitChange(db,input);input.operationId='changed';input.payload.nested.qty=2;input.state[0].value.qty=0;input.ledger[0].value.qty=0;input.audit[0].value.action='after';input.outbox.value.action='after';input.result.nested.ok=false;release();await holder;
+   const result=await pending,snapshot=await checkpoint(db);validateCheckpoint(snapshot);await stageSnapshot(stage,snapshot);const staged=await checkpoint(stage);const replay=await commitChange(db,original);let conflict=false;try{await commitChange(db,{...original,payload:{nested:{qty:3}}})}catch{conflict=true}return {result,snapshot,staged,replay,conflict,after:await checkpoint(db),original};
+  } finally {release();await db.delete();await stage.delete()}
+ });
+ expect(evidence.result).toEqual(evidence.original.result);expect(evidence.snapshot.state[0].value).toEqual(evidence.original.state[0].value);expect(evidence.snapshot.ledger).toEqual(evidence.original.ledger);expect(evidence.snapshot.audit).toEqual(evidence.original.audit);expect(evidence.snapshot.outbox).toEqual([evidence.original.outbox]);expect(evidence.snapshot.receipts[0].id).toBe('op');expect(evidence.staged).toEqual(evidence.snapshot);expect(evidence.replay).toEqual(evidence.original.result);expect(evidence.conflict).toBe(true);expect(evidence.after).toEqual(evidence.snapshot);
+});
