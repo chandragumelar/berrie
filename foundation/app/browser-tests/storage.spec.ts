@@ -14,3 +14,16 @@ test('IndexedDB: dua tab, retry setelah reload, rollback dan staging gagal',asyn
 test('migrasi IndexedDB yang gagal membatalkan upgrade dan mempertahankan data lama',async({page})=>{
  await page.goto('/'); const result=await page.evaluate(async()=>{const {default:Dexie}=await import('/node_modules/.vite/deps/dexie.js');const name=`migration-${Date.now()}`;const v1=new Dexie(name);v1.version(1).stores({ledger:'&id'});await v1.table('ledger').add({id:'entry',amount:100});v1.close();const v2=new Dexie(name);v2.version(1).stores({ledger:'&id'});v2.version(2).stores({ledger:'&id',newTable:'&id'}).upgrade(async tx=>{await tx.table('ledger').put({id:'entry',amount:0});throw new Error('simulasi migrasi gagal')});let failed=false;try{await v2.open()}catch{failed=true}v2.close();const old=new Dexie(name);old.version(1).stores({ledger:'&id'});const entry=await old.table('ledger').get('entry');const version=old.verno;await old.delete();return {failed,entry,version}});expect(result).toEqual({failed:true,entry:{id:'entry',amount:100},version:1});
 });
+test('checkpoint JSON disimpan di staging dan bertahan setelah database dibuka kembali',async({page})=>{
+ await page.goto('/');const evidence=await page.evaluate(async()=>{
+  const {BerrieDatabase}=await import('/src/storage/database.ts');const {commitChange}=await import('/src/storage/commit.ts');const {checkpoint,stageSnapshot}=await import('/src/storage/recovery.ts');
+  const name=`recovery-browser-${crypto.randomUUID()}`,source=new BerrieDatabase(name),stage=new BerrieDatabase(name+'-stage'),bad=new BerrieDatabase(name+'-bad');
+  try {
+   await commitChange(source,{operationId:'op',storeId:'s',deviceId:'d',deviceEpoch:1,localSequence:1,kind:'test',targetId:'stock',actorId:'a',policyVersion:1,payload:{qty:1},state:[{key:'stock',expectedRevision:null,value:9}],ledger:[{id:'l',operationId:'op',value:-1}],audit:[{id:'a',operationId:'op',value:'test'}],outbox:{id:'o',operationId:'op',value:'test'},result:'ok'});
+   const original=await checkpoint(source),input=JSON.parse(JSON.stringify(original));await stageSnapshot(stage,input);stage.close();const reopened=new BerrieDatabase(name+'-stage');const restored=await checkpoint(reopened);reopened.close();
+   let rejected=false;try{await stageSnapshot(bad,{...input,audit:[null]})}catch{rejected=true}
+   const empty=await checkpoint(bad),sourceAfter=await checkpoint(source);return {original,restored,empty,sourceAfter,rejected};
+  } finally {await source.delete();await stage.delete();await bad.delete();}
+ });
+ expect(evidence.restored).toEqual(evidence.original);expect(evidence.sourceAfter).toEqual(evidence.original);expect(evidence.rejected).toBe(true);expect(evidence.empty).toEqual({schema:1,state:[],ledger:[],audit:[],outbox:[],receipts:[],sequences:[]});
+});

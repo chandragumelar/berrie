@@ -2,7 +2,7 @@ import { BerrieDatabase, type EventRow } from './database';
 export interface StateChange { key:string; expectedRevision:number | null; value:unknown }
 export interface AtomicChange { operationId:string; storeId:string; deviceId:string; deviceEpoch:number; localSequence:number; kind:string; targetId:string; actorId:string; policyVersion:number; payload:unknown; state:StateChange[]; ledger:EventRow[]; audit:EventRow[]; outbox:EventRow; result:unknown }
 export interface LockProvider { request<T>(name:string, callback:()=>Promise<T>): Promise<T> }
-function canonical(value:unknown):string {
+export function canonical(value:unknown):string {
  if(value===null || typeof value==='boolean' || typeof value==='string') return JSON.stringify(value);
  if(typeof value==='number' && Number.isSafeInteger(value)) return JSON.stringify(value);
  if(Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
