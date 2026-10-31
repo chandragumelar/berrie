@@ -1,0 +1,9 @@
+import { describe, expect, it } from 'vitest';
+import { freezeSettlement, refund, type SaleLine } from './settlement';
+const line=(ids:string[],price:number):SaleLine=>({unitIds:ids,skuId:'sku',skuPrice:price,toppingPrice:0,promo:{kind:'none',revision:1}});
+describe('snapshot settlement dan refund',()=>{
+ it('memakai alokasi asal dan menolak refund ulang',()=>{const s=freezeSettlement('order',[line(['A'],10000),line(['B'],20000)],{kind:'amount',value:1000},1000,500,'payment'); const a=refund(s,[],['A']); const b=refund(s,[a],['B']); expect([a.amount,b.amount]).toEqual([11117,22233]); expect(()=>refund(s,[a],['A'])).toThrow();});
+ it('promo dibulatkan per unit, topping tidak didiskon, snapshot terpisah',()=>{const l:SaleLine={...line(['1','2','3'],20000),toppingPrice:5000,promo:{kind:'percent',value:1000,revision:2}};const s=freezeSettlement('o',[l],{kind:'none'},0,0,'payment'); expect(s.totals).toMatchObject({subtotal:75000,promo:6000,base:69000,total:69000});expect(s.units[0].skuPrice).toBe(20000);expect(()=>freezeSettlement('o',[l],{kind:'amount',value:1},0,0,'payment')).toThrow();l.skuPrice=1;expect(s.units[0].skuPrice).toBe(20000);});
+ it('membatasi qty, diskon dan sumber settlement',()=>{expect(()=>freezeSettlement('o',[line([],1)],{kind:'none'},0,0,'free')).toThrow(); expect(()=>freezeSettlement('o',[line(['a'],100)],{kind:'percent',value:10000},0,0,'payment')).toThrow(); const s=freezeSettlement('o',[line(['a'],100)],{kind:'percent',value:10000},0,0,'free');expect(s.paymentAmount).toBe(0); expect(()=>refund(s,[],['a'])).toThrow();});
+ it('mempertahankan total seluruh refund untuk berbagai kombinasi',()=>{for(let p=1;p<100;p++){const s=freezeSettlement('o',[line(['a','b','c'],p)],{kind:'percent',value:1234},725,250,'payment');const a=refund(s,[],['a']);const bc=refund(s,[a],['b','c']);expect(a.amount+bc.amount).toBe(s.totals.total);}});
+});

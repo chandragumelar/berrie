@@ -1,0 +1,9 @@
+# Prototipe mempertahankan repository dan riwayat Git sendiri.
+berrie-site/
+app/node_modules/
+app/dist/
+.DS_Store
+app/*.tsbuildinfo
+app/test-results/
+app/playwright-report/
+review-sites/berrie-kasir-d48-build.tar.gz
