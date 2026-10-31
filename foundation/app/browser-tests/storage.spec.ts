@@ -41,3 +41,16 @@ test('mutasi input saat menunggu Web Lock tidak mengubah commit',async({page})=>
  });
  expect(evidence.result).toEqual(evidence.original.result);expect(evidence.snapshot.state[0].value).toEqual(evidence.original.state[0].value);expect(evidence.snapshot.ledger).toEqual(evidence.original.ledger);expect(evidence.snapshot.audit).toEqual(evidence.original.audit);expect(evidence.snapshot.outbox).toEqual([evidence.original.outbox]);expect(evidence.snapshot.receipts[0].id).toBe('op');expect(evidence.staged).toEqual(evidence.snapshot);expect(evidence.replay).toEqual(evidence.original.result);expect(evidence.conflict).toBe(true);expect(evidence.after).toEqual(evidence.snapshot);
 });
+test('staging IndexedDB mengisolasi mutasi input hingga dibuka kembali',async({page})=>{
+ await page.goto('/');const evidence=await page.evaluate(async()=>{
+  const {BerrieDatabase}=await import('/src/storage/database.ts');const {commitChange}=await import('/src/storage/commit.ts');const {checkpoint,stageSnapshot}=await import('/src/storage/recovery.ts');const {validateCheckpoint}=await import('/src/storage/validate-checkpoint.ts');
+  const name=`stage-input-${crypto.randomUUID()}`,source=new BerrieDatabase(name),stage=new BerrieDatabase(name+'-stage');
+  try {
+   await commitChange(source,{operationId:'op',storeId:'s',deviceId:'d',deviceEpoch:1,localSequence:1,kind:'test',targetId:'stock',actorId:'a',policyVersion:1,payload:{qty:1},state:[{key:'stock',expectedRevision:null,value:{nested:{qty:9}}}],ledger:[{id:'l',operationId:'op',value:{nested:{qty:-1}}}],audit:[{id:'a',operationId:'op',value:{nested:{action:'awal'}}}],outbox:{id:'o',operationId:'op',value:{nested:{action:'awal'}}},result:{nested:{ok:true}}});
+   const before=await checkpoint(source),input=structuredClone(before),pending=stageSnapshot(stage,input);
+   (input.state[0].value as {nested:{qty:number}}).nested.qty=0;(input.ledger[0].value as {nested:{qty:number}}).nested.qty=0;(input.audit[0].value as {nested:{action:string}}).nested.action='ubah';(input.outbox[0].value as {nested:{action:string}}).nested.action='ubah';(input.receipts[0].result as {nested:{ok:boolean}}).nested.ok=false;input.sequences[0].sequence=2;
+   input.state=[];input.ledger=[];input.audit=[];input.outbox=[];input.receipts=[];input.sequences=[];
+   await pending;stage.close();const reopened=new BerrieDatabase(name+'-stage');try {const staged=await checkpoint(reopened);validateCheckpoint(staged);return {before,staged,sourceAfter:await checkpoint(source)};} finally {reopened.close();}
+  } finally {await source.delete();await stage.delete();}
+ });expect(evidence.staged).toEqual(evidence.before);expect(evidence.sourceAfter).toEqual(evidence.before);
+});
