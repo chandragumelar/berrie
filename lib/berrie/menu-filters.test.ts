@@ -6,7 +6,7 @@ import {menuTabs,validateMenuCategories} from './menu-filters.ts';
 
 test('fixed filters isolate empty stock; promo is one independent selection',()=>{
  const s=fixture();s.catalog.find(x=>x.id==='kentang')!.promos={Toko:{active:true,mode:'amount',value:1000,name:'Promo',revision:1}};
- assert.deepEqual(menuTabs([]),['Semua','Habis','Promo']);
+ assert.deepEqual(menuTabs([]),['Favorit','Semua','Habis','Promo']);
  const all=catalogRows(s.catalog,'Toko'),out=catalogRows(s.catalog,'Toko','','Habis'),promo=catalogRows(s.catalog,'Toko','','Promo'),snacks=catalogRows(s.catalog,'Toko','','Camilan');
  assert.deepEqual(out.map(x=>x.key),['kentang']);
  assert.equal(all.some(x=>x.key==='kentang'),false);
@@ -23,7 +23,7 @@ test('category settings validate at mutation boundary without altering SKU or hi
  assert.throws(()=>validateMenuCategories(['x'.repeat(41)]),/40/);
  const s=fixture(),n=reduceAction(s,{kind:'settings',activity:'Pengaturan',data:{menuCategories:['Minuman','Makanan','Camilan',' Kopi ','Teh']},reason:'',amount:0},'categories');
  assert.deepEqual(n.settings.menuCategories,['Minuman','Makanan','Camilan','Kopi','Teh']);assert.deepEqual(n.catalog,s.catalog);
- assert.deepEqual(menuTabs(n.settings.menuCategories!),['Semua','Minuman','Makanan','Camilan','Kopi','Teh','Habis','Promo']);
+ assert.deepEqual(menuTabs(n.settings.menuCategories!),['Favorit','Semua','Minuman','Makanan','Camilan','Kopi','Teh','Habis','Promo']);
  assert.throws(()=>reduceAction(n,{kind:'settings',activity:'Pengaturan',data:{menuCategories:[]},reason:'',amount:0},'clear'),/masih dipakai/);
 });
 test('generic variant is omitted while actual variants and snapshots stay distinguishable',()=>{

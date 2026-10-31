@@ -1,3 +1,4 @@
+import {validateAliases} from './aliases.ts';
 import {configuredTypes,typeLabel,autoAliases} from './menu-config.ts';
 import {validateMenuCategories} from './menu-filters.ts';
 import type {State} from './domain.ts';
@@ -14,5 +15,5 @@ export function applyTaxonomy(s:State,d:Record<string,unknown>){
   s.settings[key]=d.operation==='add'?[...list,name]:list.map(x=>x===old?name:x);
   if(d.operation==='rename')for(const sku of s.catalog){if(category&&sku.category===old)sku.category=name;else if(!category&&sku.type===old)sku.type=name;}
  }
- if(!category){const aliases={...s.settings.typeAliases};if(d.operation==='rename'&&aliases[old])aliases[name]=aliases[old];if(d.operation!=='add')delete aliases[old];s.settings.typeAliases=autoAliases(s.settings.menuTypes??[],aliases);}
+ if(!category){const aliases={...s.settings.typeAliases};if(d.operation==='rename'&&aliases[old])aliases[name]=aliases[old];if(d.operation!=='add')delete aliases[old];s.settings.typeAliases=autoAliases(s.settings.menuTypes??[],aliases);if(d.alias!==undefined&&d.operation==='rename')s.settings.typeAliases=validateAliases({...s.settings.typeAliases,[name]:d.alias},s.settings.menuTypes??[]);}
 }
