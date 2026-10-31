@@ -1,9 +1,10 @@
-import { halfUp, integer, settlement } from './money';
+import { allocate, halfUp, integer, settlement } from './money';
 
 export type Discount = { kind: 'none' } | { kind: 'amount'; value: number } | { kind: 'percent'; value: number };
-export type Promo = { kind: 'none'; revision: number } | { kind: 'amount' | 'percent'; value: number; revision: number };
-export interface SaleLine { unitIds: string[]; skuId: string; skuPrice: number; toppingPrice: number; promo: Promo }
-export interface FrozenUnit { id: string; skuId: string; skuPrice: number; toppingPrice: number; promo: Promo; promoAmount: number }
+export type Promo = { kind: 'none'; revision: number } | { kind: 'amount' | 'percent'; value: number; revision: number } | { kind: 'buyXGetY'; buy: number; free: number; promotionId: string; revision: number };
+export interface PromoIdentity { toppings: string[]; choices: string[]; serving: 'dine_in' | 'takeaway'; note: string }
+export interface SaleLine { unitIds: string[]; skuId: string; skuPrice: number; toppingPrice: number; promo: Promo; identity?: PromoIdentity }
+export interface FrozenUnit { id: string; skuId: string; skuPrice: number; toppingPrice: number; promo: Promo; promoAmount: number; identity?: PromoIdentity; groupUnitIds?: string[] }
 export interface SettlementSnapshot { orderId: string; units: FrozenUnit[]; discount: Discount; taxBp: number; serviceBp: number; source: 'free' | 'payment' | 'platform'; paymentAmount: number; totals: ReturnType<typeof settlement> }
 function nonblank(value: unknown): asserts value is string { if (typeof value !== 'string' || !value.trim()) throw new Error('Identitas wajib'); }
 function discountValue(discount: Discount, basis: number): number {
@@ -12,16 +13,54 @@ function discountValue(discount: Discount, basis: number): number {
  if (discount.kind === 'percent') return halfUp(BigInt(basis) * BigInt(integer(discount.value,0,10_000)),10_000n);
  throw new Error('Jenis diskon tidak sah');
 }
+function validateBuyPromo(promo: Extract<Promo, {kind:'buyXGetY'}>, identity: unknown): asserts identity is PromoIdentity {
+ integer(promo.buy,1,99); integer(promo.free,1,99); nonblank(promo.promotionId);
+ object(identity);
+ for (const key of ['toppings','choices'] as const) {
+  if (!Array.isArray(identity[key])) throw new Error('Identitas promo tidak sah');
+  for (const item of identity[key]) nonblank(item);
+  if (new Set(identity[key]).size !== identity[key].length) throw new Error('Identitas promo ganda');
+ }
+ if (identity.serving !== 'dine_in' && identity.serving !== 'takeaway') throw new Error('Penyajian tidak sah');
+ if (typeof identity.note !== 'string') throw new Error('Catatan tidak sah');
+}
+function applyQuantityPromos(units: FrozenUnit[]): void {
+ const groups = new Map<string, FrozenUnit[]>();
+ for (const unit of units) {
+  if (unit.promo.kind !== 'buyXGetY') continue;
+  validateBuyPromo(unit.promo, unit.identity);
+  const identity = unit.identity!;
+  const key = JSON.stringify([unit.skuId,unit.skuPrice,unit.toppingPrice,unit.promo.promotionId,unit.promo.revision,unit.promo.buy,unit.promo.free,[...identity.toppings].sort(),[...identity.choices].sort(),identity.serving,identity.note]);
+  const group = groups.get(key) ?? []; group.push(unit); groups.set(key,group);
+ }
+ for (const group of groups.values()) {
+  group.sort((a,b)=>a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const ids = group.map(u=>u.id); const promo = group[0].promo;
+  if (promo.kind !== 'buyXGetY') throw new Error('Promo tidak sah');
+  const size = promo.buy + promo.free;
+  for (const unit of group) unit.groupUnitIds = [...ids];
+  for (let i=0; i+size<=group.length; i+=size) {
+   const members = group.slice(i,i+size);
+   const amount = Number(BigInt(group[0].skuPrice) * BigInt(promo.free));
+   const shares = allocate(amount,members.map(u=>({id:u.id,weight:u.skuPrice})));
+   for (const unit of members) unit.promoAmount = shares.get(unit.id)!;
+  }
+ }
+}
+/** Input lines are draft units from this order only; confirmed snapshots must stay separate. */
 export function freezeSettlement(orderId: string, lines: SaleLine[], discount: Discount, taxBp: number, serviceBp: number, source: SettlementSnapshot['source']): SettlementSnapshot {
  nonblank(orderId); if (!Array.isArray(lines) || !lines.length) throw new Error('Unit wajib');
  const units: FrozenUnit[] = [];
  for (const line of lines) {
   nonblank(line.skuId); integer(line.skuPrice); integer(line.toppingPrice); integer(line.promo.revision,0,Number.MAX_SAFE_INTEGER);
   if (!Array.isArray(line.unitIds)) throw new Error('Unit tidak sah'); integer(line.unitIds.length,1,999);
-  const p=line.promo.kind === 'none' ? 0 : discountValue(line.promo,line.skuPrice);
+  if (line.promo.kind === 'buyXGetY') validateBuyPromo(line.promo, line.identity);
+  const p=line.promo.kind === 'none' || line.promo.kind === 'buyXGetY' ? 0 : discountValue(line.promo,line.skuPrice);
   if (p > line.skuPrice) throw new Error('Promo melebihi harga SKU');
-  for (const id of line.unitIds) { nonblank(id); units.push({id,skuId:line.skuId,skuPrice:line.skuPrice,toppingPrice:line.toppingPrice,promo:structuredClone(line.promo),promoAmount:p}); }
+  for (const id of line.unitIds) { nonblank(id); units.push({id,skuId:line.skuId,skuPrice:line.skuPrice,toppingPrice:line.toppingPrice,promo:structuredClone(line.promo),promoAmount:p,...(line.promo.kind === 'buyXGetY' ? {identity: structuredClone(line.identity!)} : {})}); }
  }
+ applyQuantityPromos(units);
+ if (discount.kind !== 'none' && units.some(u => u.promo.kind === 'buyXGetY')) throw new Error('Promo tidak dapat digabung diskon order');
  const subtotal=units.reduce((n,u)=>n+BigInt(u.skuPrice)+BigInt(u.toppingPrice),0n);
  if (subtotal>BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Total di luar batas');
  const amount=discountValue(discount,Number(subtotal));
@@ -33,10 +72,11 @@ export interface RefundRecord { unitIds: string[]; amount: number; source: 'paym
 function object(value: unknown): asserts value is Record<string, unknown> {
  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Struktur tidak sah');
 }
-function validateDiscount(value: unknown, promo = false): asserts value is Promo & Discount {
+function validateDiscount(value: unknown, promo = false): asserts value is Promo {
  object(value);
  if (promo) integer(value.revision, 0, Number.MAX_SAFE_INTEGER);
  if (value.kind === 'none') return;
+ if (promo && value.kind === 'buyXGetY') { integer(value.buy,1,99); integer(value.free,1,99); nonblank(value.promotionId); return; }
  if (value.kind === 'amount') { integer(value.value); return; }
  if (value.kind === 'percent') { integer(value.value, 0, 10_000); return; }
  throw new Error('Jenis diskon tidak sah');
@@ -53,11 +93,12 @@ export function validateSettlementSnapshot(value: unknown): asserts value is Set
   object(unit); nonblank(unit.id); nonblank(unit.skuId);
   integer(unit.skuPrice); integer(unit.toppingPrice); integer(unit.promoAmount);
   validateDiscount(unit.promo, true);
-  return {unitIds:[unit.id], skuId:unit.skuId, skuPrice:unit.skuPrice as number, toppingPrice:unit.toppingPrice as number, promo:unit.promo};
+  if (unit.promo.kind === 'buyXGetY') validateBuyPromo(unit.promo, unit.identity);
+  return {unitIds:[unit.id], skuId:unit.skuId, skuPrice:unit.skuPrice as number, toppingPrice:unit.toppingPrice as number, promo:unit.promo, ...(unit.promo.kind === 'buyXGetY' ? {identity: unit.identity as PromoIdentity} : {})};
  });
- const expected = freezeSettlement(value.orderId, lines, value.discount, value.taxBp as number, value.serviceBp as number, value.source);
+ const expected = freezeSettlement(value.orderId, lines, value.discount as Discount, value.taxBp as number, value.serviceBp as number, value.source);
  for (let i=0; i<expected.units.length; i++) {
-  if (value.units[i].promoAmount !== expected.units[i].promoAmount) throw new Error('Promo snapshot tidak sesuai');
+  if (value.units[i].promoAmount !== expected.units[i].promoAmount || (expected.units[i].promo.kind === 'buyXGetY' && JSON.stringify(value.units[i].groupUnitIds) !== JSON.stringify(expected.units[i].groupUnitIds))) throw new Error('Promo snapshot tidak sesuai');
  }
  if (value.paymentAmount !== expected.paymentAmount) throw new Error('Payment snapshot tidak sesuai');
  object(value.totals);
