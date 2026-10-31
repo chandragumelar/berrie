@@ -1,10 +1,37 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture,reduceAction,createOrder,makeUnits,unitFinal,type Action} from './domain.ts';
+import {fixture,reduceAction,createOrder,makeUnits,unitFinal,totals,expected,type Action} from './domain.ts';
 import {catalogDraft} from './workshop.ts';
 import {optionPriceDraft,applyOptionPrices} from './option-prices.ts';
 import {stockBaseline,changeStock} from './shared-stock.ts';
 const action=(kind:string,data:Action['data'],activity:Action['activity']='Koreksi stok'):Action=>({kind,data,activity,reason:'Pemeriksaan stok fisik',amount:0});
+
+test('new menu with paid sizes and free choices commits one stock group without creating a generic row',()=>{
+ const s=fixture(),source={...catalogDraft(s)[0],sku:undefined,key:'new-menu',group:'butterscotch',name:'Butterscotch',price:'18000',stock:'1000',threshold:'5',available:true,variables:[],variableValues:{},promos:{},discountAssignments:{},flavour:'',size:'',toppings:[],recipes:[],channelPrices:{Toko:18000}};
+ const configured=applyOptionPrices([
+  {id:'size',name:'Ukuran',multiple:false,pricing:'free',options:['Kecil','Besar'],defaults:[],prices:{Kecil:0,Besar:5000}},
+  {id:'ice',name:'Es',multiple:false,pricing:'free',options:['Normal','Sedikit'],defaults:[],prices:{Normal:0,Sedikit:0}},
+ ],'18000',[source],[]);
+ const n=reduceAction(s,action('menuGrid',{rows:[...catalogDraft(s),...configured.prices]},'Harga / impor'),'new-options');
+ const members=n.catalog.filter(x=>x.stockGroup==='butterscotch');
+ assert.equal(members.length,2);assert.deepEqual(members.map(x=>x.price),[18000,23000]);assert.ok(members.every(x=>x.stock===1000));assert.equal(n.stockLedger.length,1);assert.equal(n.stockLedger[0].group,'butterscotch');assert.equal(n.stockLedger[0].delta,1000);
+ const o=createOrder(n),u=makeUnits(n,o,members[1],1,[],'Bungkus','',undefined,{}, {size:['Besar'],ice:['Sedikit']})[0];
+ assert.equal(unitFinal(u),23000);assert.ok(u.recipes?.includes('Es: Sedikit'));assert.equal(members[1].stock,1000);
+});
+
+test('price 100 and quantity 200 are agnostic: total 20000, debit 200 once and settlement keeps that stock',()=>{
+ const s=fixture(),source={...catalogDraft(s).find(x=>x.name==='Es Teh')!,sku:undefined,key:'agnostic',group:'kopi-agnostic',name:'Kopi / ml',price:'100',stock:'1000',threshold:'100',variables:[],variableValues:{},promos:{},discountAssignments:{},channelPrices:{Toko:100}};
+ const configured=applyOptionPrices([],'100',[source],[]);
+ let n=reduceAction(s,action('menuGrid',{rows:[...catalogDraft(s),...configured.prices]},'Harga / impor'),'new-agnostic');
+ n=reduceAction(n,action('open',{amount:'0'},'Rutin'),'open-agnostic');
+ const sku=n.catalog.find(x=>x.stockGroup==='kopi-agnostic')!,o=createOrder(n);o.identity='Tumbler';o.units=makeUnits(n,o,sku,200,[],'Bungkus','');n.orders.push(o);
+ assert.equal(totals(o).total,20000);assert.equal(sku.stock,1000);
+ const process={...action('process',{},'Rutin'),order:o.id,revision:o.revision},processed=reduceAction(n,process,'process-agnostic');
+ assert.equal(processed.catalog.find(x=>x.id===sku.id)!.stock,800);assert.deepEqual(reduceAction(processed,process,'process-agnostic'),processed);
+ const current=processed.orders.find(x=>x.id===o.id)!;
+ const paid=reduceAction(processed,{...action('settle',{source:'Payment',method:'Tunai',received:'20000'},'Rutin'),order:o.id,revision:current.revision},'pay-agnostic');
+ assert.equal(paid.orders.find(x=>x.id===o.id)!.settlement!.total,20000);assert.equal(expected(paid),20000);assert.equal(paid.catalog.find(x=>x.id===sku.id)!.stock,800);assert.deepEqual(paid.stockLedger,processed.stockLedger);
+});
 
 test('legacy option increments preserve SKU price, code, promo and stock on menu save',()=>{
  const s=fixture(),all=catalogDraft(s),old=all.filter(r=>r.name==='Es Kopi Susu');
@@ -56,7 +83,7 @@ test('delete menu needs confirmation and permission, hides all variants while re
  assert.throws(()=>reduceAction(s,{...a,activity:'Rutin'},'bypass'),/izin/);
  const n=reduceAction(s,a,'delete');assert.ok(n.catalog.filter(x=>x.name==='Es Kopi Susu').every(x=>x.archived&&!x.available));assert.equal(n.catalog.length,s.catalog.length);assert.deepEqual(n.stockLedger,s.stockLedger);assert.deepEqual(n.orders,s.orders);assert.deepEqual(reduceAction(n,a,'delete'),n);
  assert.throws(()=>reduceAction(n,action('menuGrid',{rows:catalogDraft(s)},'Harga / impor'),'stale-menu'),/sudah dihapus/);
- const staff={...s,actor:'Rani'};assert.throws(()=>reduceAction(staff,a,'staff-delete'),/Persetujuan/);
+ const staff={...s,actor:'a'};assert.throws(()=>reduceAction(staff,a,'staff-delete'),/Persetujuan/);
  const open={...s,orders:[{...createOrder(s),units:makeUnits(s,createOrder(s),s.catalog.find(x=>x.id==='kopi-b')!,1,[],'Bungkus','')} ]};assert.throws(()=>reduceAction(open,a,'draft-delete'),/draft/);
 });
 

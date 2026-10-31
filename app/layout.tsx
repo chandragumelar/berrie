@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./cashier-ui.css";
 
 export const metadata: Metadata = {
   title: "Berrie · Prototipe Kasir",
   description: "Prototipe interaktif Berrie untuk evaluasi visual dan alur kasir. Data contoh.",
-  other: {
-    "codex-preview": "development",
-  },
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

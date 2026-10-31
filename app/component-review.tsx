@@ -10,8 +10,8 @@ export function ComponentReview({onOpenDialog}:{onOpenDialog:()=>void}) {
  const [quantity,setQuantity]=useState('1'),[serving,setServing]=useState('Bungkus');
  const [checked,setChecked]=useState(false),[radio,setRadio]=useState('Tunai'),[toggle,setToggle]=useState(false),[promo,setPromo]=useState(false);
  return <details className="component-review">
-  <summary>Komponen & aksesibilitas · D-49</summary>
-  <p className="hint">Apple system / Inter lokal · isi 14/400, label 14/500, halaman 18/600, dialog 20/600, total 22/600. Target 44 px; kontrol utama 48 px.</p>
+  <summary>Komponen & aksesibilitas · D-73</summary>
+  <p className="hint">Inter lokal · isi 14 px, bagian 16 px, dialog 20 px, halaman 24 px. Radius kontrol 6 px, kartu 8 px, modal 12 px. Target 44 px; kontrol utama 48 px.</p>
   <section className="review-section"><h3>Tombol dan keadaan</h3>
    <div className="component-row"><button className="primary">Utama</button><button>Sekunder</button><button className="text-button">Plain</button><button className="text-button danger">Batalkan</button><button className="icon-button" aria-label="Tutup contoh"><X aria-hidden="true"/></button><button disabled>Nonaktif</button><button className="primary" disabled aria-busy="true"><LoaderCircle aria-hidden="true" className="busy-spinner"/>Menyimpan…</button></div>
    <button className="review-floating primary"><ShoppingBag aria-hidden="true"/>Keranjang · 3 item · Rp45.000</button>
@@ -31,7 +31,7 @@ export function ComponentReview({onOpenDialog}:{onOpenDialog:()=>void}) {
    <div className="component-row"><span className="tag">Besar</span><Badge>3 item</Badge><Badge tone="green"><CircleCheck aria-hidden="true"/>Lunas</Badge><Badge tone="warning"><CircleAlert aria-hidden="true"/>Perlu diperiksa</Badge></div>
   </section>
   <section className="review-section"><h3>Navigasi, tabel, dan fixture</h3>
-   <div className="review-navigation"><button className="nav-button" data-active="true"><ShoppingBag aria-hidden="true"/>Kasir</button><button className="nav-button">Pengaturan</button></div>
+   <div className="cashier-methods"><button aria-pressed="true"><ShoppingBag aria-hidden="true"/>Kasir</button><button aria-pressed="false">Pengaturan</button></div>
    <div className="review-table"><DataTable heads={['Menu','Sisa','Diskon','Rp harga']} label="Fixture komponen">
     <TableRow><TableCell>Es Kopi Susu · Besar</TableCell><TableCell className="amount">10</TableCell><TableCell className="amount">10</TableCell><TableCell className="amount">18.000</TableCell></TableRow>
     <TableRow><TableCell>Es Teh</TableCell><TableCell>1000</TableCell><TableCell className="amount">0</TableCell><TableCell className="amount">5.000</TableCell></TableRow>
@@ -41,14 +41,12 @@ export function ComponentReview({onOpenDialog}:{onOpenDialog:()=>void}) {
    <dl className="totals"><div className="grand"><dt>Total contoh</dt><dd>Rp98.765.432</dd></div></dl>
    <div className="empty-cart"><ShoppingBag aria-hidden="true"/><h3>Keranjang masih kosong</h3><p>Pilih yang dipesan pelanggan.</p></div>
   </section>
-  <section className="review-section"><h3>Feedback, overlay, dan material</h3>
+  <section className="review-section"><h3>Feedback dan overlay</h3>
    <p className="review-feedback good"><CircleCheck aria-hidden="true"/>Pembayaran contoh tercatat. Penyajian belum dicatat.</p>
    <p className="review-feedback review-warning"><CircleAlert aria-hidden="true"/>Hasil pencatatan belum diketahui. Periksa operasi yang sama sebelum mengulang penerimaan uang.</p>
    <p className="error">Perubahan belum tersimpan. Input tetap ada; coba simpan lagi setelah gangguan dimatikan.</p>
    <button onClick={onOpenDialog}>Buka dialog / sheet contoh</button>
    <p className="hint">Dropdown di atas menunjukkan popover. Form transaksi selalu solid.</p>
-   <div className="review-material"><nav className="material-sample" aria-label="Contoh navigasi material"><button className="text-button">Kasir</button><span>Material</span></nav></div>
-   <nav className="solid-sample" aria-label="Contoh fallback solid"><button className="text-button">Kasir</button><span>Fallback solid</span></nav>
    <p className="hint">Tab untuk memeriksa fokus; pointer untuk hover/pressed. Reduced motion, reduced transparency, increased contrast, dan forced colors memakai preferensi browser. Bukan hasil UT peserta.</p>
   </section>
  </details>;

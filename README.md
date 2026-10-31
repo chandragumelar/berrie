@@ -1,81 +1,56 @@
-# Berrie — Prototipe Sites M-03
+# Berrie · Prototipe Sites
 
-8 Oktober 2026. Proyek Sites **Berrie · Prototipe Kasir**, `appgprj_6ac54219b9248191bf551b9871d78958`. Versi sebelumnya 1–9 tersimpan tanpa deployment; revisi aktif D-69. Identitas simpan berikutnya pada tasks setelah konfirmasi layanan. Revisi D-55/D-56 menambahkan keranjang/detail empat item pendek, identitas wajib, Pesanan default Lunas, form tipe/ukuran/topping dan peringatan stok di aplikasi. Revisi D-53/D-54: panel solid #FCFCFD dan cyan aktif, Kasir/Pesanan/Riwayat ringkas, dapur saja sebelum bayar, riwayat hanya selesai dan refund final setelah uang dikembalikan. [Review terkini](REVIEW-MENU-KAS-D61-D65.md); identitas hasil simpan layanan pada [tasks](../tasks.md). Font Apple system/Inter lokal dan token [design system](../DESIGN-SYSTEM.md) tetap. Visual belum disetujui.
+**Copy terbaru D-77:** Channel dan nilainya sebaris; kontrol penyajian tanpa judul/bantuan terlihat. Perilaku D-76 tetap.
 
-## Cakupan revisi
+**Kasir terbaru D-76 · 31 Oktober 2026:** Mulai bertugas, katalog padat/tambah langsung/Urungkan, Favorit stabil dan Channel/default penyajian di kepala pesanan. [Review D-76](REVIEW-KASIR-D76.md). Favorit/default hanya memori React dan hilang saat reload; tanpa deployment.
 
-Satu Buka kas sebagai langkah awal, channel Toko, tabel promo nyata per SKU, keranjang kompak, dua penyajian per item, pembayaran tunai/QRIS dan modal Struk yang menampilkan dua tujuan. Font sistem Apple/Inter dibundel lokal, tombol kapsul, kontrol konsisten dan Lucide mengikuti token design system. Promo SKU tidak digabung diskon order; topping tetap utuh dan snapshot harga lama tidak diganti otomatis. Font 14/18/20/22 sesuai peran, SKU bernama unik, sel numerik, alias tipe, workflow toggle kas dan navigasi kiri yang dapat diciutkan. Lihat [hasil terbaru](REVIEW-MENU-KAS-D61-D65.md); [review versi 1](REVIEW-KASIR.md) dipertahankan.
+**Terbaru D-75 · 31 Oktober 2026:** editor Menu/Stok dengan aksi sticky di atas dan status draft, laporan ringkas/dasar eksplisit/catatan harian, alias di Tipe menu, Toko pertama/default, pengelolaan staf owner online dengan ID tetap/nonaktif/izin bersama. [Review/status D-75](REVIEW-ADMIN-LAPORAN-D75.md). Masih memori lokal, tanpa akun atau PIN nyata dan tanpa deployment. Pemeriksaan visual baru mengikuti status review; bukti D-74 di bawah adalah historis.
 
-`app/page.tsx` memuat UI, `app/berrie-controls.tsx` kontrol bersama, `app/component-review.tsx` fixture review terpisah, `lib/berrie/domain.ts` logika simulasi murni dan `app/globals.css` styling. Data bisnis **di memori**; reload menghapus perubahan demo. Tidak membuktikan IndexedDB/offline, autentikasi/izin server, backup, pembayaran nyata, printer fisik atau kesiapan pilot. Panel demo menguji gagal simpan/hasil belum diketahui tanpa transaksi nyata. Data toko contoh mengaktifkan Tunai + QRIS; aktivasi toko baru hanya Tunai.
+Prototipe interaktif POS makanan/minuman, bahasa Indonesia dan IDR. **D-74 (13 Oktober 2026): Kas dua kolom tablet/finish bertumpuk; laporan bisnis harian dengan penelusuran angka dan refund kontekstual. Navigasi tablet atas/HP bawah tetap.** D-73 tetap: harga/qty/stok agnostik, varian opsional saat Tambah menu, Kas ringkas dan fondasi visual berdasarkan dokumentasi resmi Atlassian. Alur/cetak/edit draft D-72 tetap. Struktur dua kolom dan navigasi horizontal dipertahankan; tidak ada pemilih desain atau backup UI lama. Design system aktif pada [root](../DESIGN-SYSTEM.md), aturan produk pada [specs](../specs/README.md), hasil review sebelumnya pada [D-74](REVIEW-KAS-LAPORAN-D74.md), fondasi pada [D-73](REVIEW-MENU-KAS-D73.md), alur sebelumnya pada [D-71/D-72](REVIEW-KASIR-D71.md).
 
-Acuan lokal: [indeks spesifikasi](../specs/README.md), [UX Principles](../specs/12-ux-principles.md), [alur](../specs/02-user-flows.md), [aturan layar](../specs/09-screens-and-hardware.md), [acceptance criteria](../specs/10-acceptance-criteria.md) dan [design system](../DESIGN-SYSTEM.md). Scope revisi ini Kasir/Pesanan/Menu & Stok, dengan regresi Riwayat/refund. Starter tetap Vinext untuk prototipe; stack produksi D-02–05 tetap. Folder mockup lama dipensiunkan pada 8 Oktober 2026; prototipe aktif hanya Sites, histori M-01/M-02 pada tasks.
+Review sebelumnya digabung pada [riwayat D-43–70](REVIEW-HISTORY.md); untuk lanjut kerja gunakan [patokan pada tasks](../tasks.md#patokan-untuk-melanjutkan).
 
-## Perintah lokal
+Status audit visual lintas prototipe terbaru: [audit ADS 31 Oktober 2026](REVIEW-ADS-2026-10-31.md). Perbaikan komponen bersama dan checks kode selesai. Audit visual pelaksana pada cakupan representatif selesai melalui Safari tablet1024×768/HP360, teks200%, gelap dan page zoom200%. Zoom dipulihkan100%; preview Kasir tablet kembali terlihat. Rincian cakupan/batas ada pada bagian penutupan review, bukan kelulusan AC visual penuh.
 
-Dari direktori proyek dengan dependensi terpasang dan Node ≥22.13:
+## Lokal
+
+Jalankan dari `/Users/icang/berrie/berrie-site` dengan npm/lockfile proyek. Dependensi yang sudah terpasang tidak perlu dipasang ulang.
 
 | Perintah | Fungsi |
 | --- | --- |
-| `npm run dev -- --host 127.0.0.1 --port 4173` | Preview portable di loopback |
+| `npm run dev -- --host 127.0.0.1 --port 4173` | Preview lokal loopback |
 | `npm run typecheck` | TypeScript strict |
 | `npm run lint` | ESLint |
-| `npm test` | 99 tes domain termasuk promo, pembayaran, stok, idempotensi dan cetak ulang |
+| `npm test` | 137 tes domain, menu/qty agnostik, cetak, tanggal riwayat dan laporan |
 | `npm run build` | Build lokal, bukan deployment |
 | `npm start` | Preview Worker hasil build di loopback |
 
-Typecheck, lint dan 95 tes domain lulus; bukti terbaru pada REVIEW-MENU-KAS-D68.md. Build/packaging diperiksa oleh workflow Sites sebelum versi disimpan; kegagalan menghentikan penyimpanan. Tidak ada script `test:browser`; pemeriksaan browser dilakukan langsung pada preview dan dicatat di REVIEW-MENU-KAS-D68.md.
+Buka `http://127.0.0.1:4173/`: langsung UI terpilih dengan frame tablet **1024×768**, termasuk dialog. `?design=alternative` lama tidak diperlukan dan tidak memilih cabang lain. `?workspace=responsive` menampilkan UI langsung untuk ukuran lain. Pembungkus tablet hanya localhost; hosted responsif. Tidak ada script test:browser; pemeriksaan browser langsung dicatat di review.
 
-## Penyimpanan dan publikasi
+## Batas simulasi
 
-`.openai/hosting.json` menyimpan identitas proyek. Simpan sumber dan versi melalui workflow Sites dengan publikasi otomatis tidak diaktifkan. Simpan versi bukan deployment. Akses proyek tetap seperti sebelumnya; jangan menerbitkan tanpa arahan pemilik.
+Data contoh hanya memori React, hilang saat reload. Domain menerapkan perhitungan/validasi simulasi, bukan IndexedDB, API transaksional, keamanan, sync/backup atau printer produksi. Status tercatat/online/approval/cetak adalah contoh dan tidak membuktikan penerimaan server, perpindahan uang atau kertas fisik. Implementasi produksi mengikuti stack/gerbang pada spesifikasi; starter Vinext ini tetap prototipe.
 
-## Struktur dan dukungan tooling
+D-76: kartu sederhana langsung menambah satu draft dengan Urungkan satu unit terakhir; kartu berpilihan membuka editor/Tambahkan ke pesanan. Favorit diatur owner pada Menu & Stok → Favorit dengan Naik/Turun. Default penyajian di kepala pesanan hanya untuk item berikutnya, awal Bungkus; Makan di tempat di kiri/Bungkus di kanan. Penyajian tiap item dapat diedit dan tetap sumber detail/cetakan. Channel berpindah ke kepala pesanan; kas tertutup hanya panel Mulai bertugas. Tanpa copy bantuan/harga per unit. Detail draft menyediakan Edit pesanan ke Kasir dengan nomor/identitas tetap. Qty inline dan pembayaran satu panel. Bayar nanti/Bayar/Simpan dulu tetap berbeda; stok hanya debit saat konfirmasi pembuatan. Simpan dulu/Bayar nanti/pembayaran berhasil mengosongkan Pesanan baru dan memberi notifikasi Lihat pesanan; gagal/unknown mempertahankan input. Bayar nanti otomatis mencoba dapur; pembayaran dapur batch baru lalu pelanggan, batch lama hanya pelanggan. Simpan dulu tanpa cetak/debit. Struk/cetak ulang tersedia di detail, selesai setelah attempt tanpa konfirmasi kertas atau berbagi; ulang SALINAN. Riwayat menyediakan tanggal awal–akhir inklusif zona toko. Menu/Stok/Rekap tabel gulir dan pustaka diskon/jadwal tetap D-68/D-69.
+
+## Sumber
 
 | Lokasi | Fungsi |
 | --- | --- |
-| `app/page.tsx`, `app/layout.tsx`, `app/globals.css` | UI, metadata dan style prototipe |
-| `lib/berrie/domain.ts`, `catalog.ts`, `aliases.ts`, `*.test.ts` | Domain simulasi dan 95 tes |
-| `components/ui/`, `hooks/use-mobile.ts`, `lib/utils.ts` | Komponen UI terpakai beserta dependensinya |
-| `public/fonts/InterVariable.woff2`, `OFL.txt` | Inter variable lokal dan lisensi OFL; tanpa CDN font saat membuka Kasir |
-| `public/favicon.svg` | Favicon Berrie yang direferensikan metadata |
-| `build/`, `scripts/`, `vite.config.ts`, `.openai/hosting.json` | Runtime preview/build Sites dan identitas proyek; dipertahankan |
-| `lib/connector*`, `app/chatgpt-auth.ts`, `components/connector-error.tsx` | Dukungan opsional platform Sites; bukan fitur POS aktif |
-| `db/`, `drizzle/`, `drizzle.config.ts`, `cloudflare-env.d.ts` | Tooling D1/Drizzle starter, termasuk perintah db:generate; bukan database bisnis prototipe |
-| `vendor/` | Stylesheet yang diimport globals.css beserta lisensinya |
+| `app/page.tsx`, `cashier-catalog.tsx` | Layar/alur dan katalog Kasir aktif |
+| `app/globals.css`, `cashier-ui.css`, `layout.tsx` | Struktur bersama, token/style aktif dan metadata |
+| `app/*workspace.tsx`, `*editor.tsx`, `new-menu-dialog.tsx`, `variant-fields.tsx`, `berrie-controls.tsx` | Pengelolaan toko/form/komponen bersama |
+| `app/component-review.tsx` | Fixture review di luar alur kasir |
+| `lib/berrie/` (termasuk `cashier.ts`/tes D-76) | Domain simulasi dan tes uang/stok/promo/idempotensi |
+| `components/ui/`, `lib/utils.ts` | Dependensi UI yang digunakan |
+| `public/fonts/InterVariable.woff2`, `OFL.txt` | Font variable lokal dan OFL, tanpa CDN runtime |
+| `public/favicon.svg` | Favicon |
+| `vendor/` | Stylesheet vendor dan lisensi berpasangan |
 
-Pembersihan 7 Oktober 2026 menghapus komponen UI starter tanpa jalur import dari aplikasi, ikon placeholder dan contoh D1 terpisah. Konfigurasi, package manager/lockfile, runtime dan perilaku UI tetap. Manifest masih menyediakan dukungan tooling starter; tugas ini tidak mengubah dependensi. Petunjuk workflow platform berada pada skill Sites, bukan salinan manual starter di repo.
+`.openai/hosting.json` mempertahankan `project_id=appgprj_6ac54219b9248191bf551b9871d78958`. Root `/Users/icang/berrie` bukan Git, `berrie-site` mempunyai Git sendiri. Histori bukti/revisi di register/tasks/review bukan cabang UI yang dapat diaktifkan. Tidak membuat salinan UI lama atau mengubah histori Git.
 
-Root `berrie/` belum memiliki Git; direktori `berrie-site/` mempunyai Git sendiri. [Review versi 1](REVIEW-KASIR.md) dan [review versi 2](REVIEW-KASIR-D47.md) merekam hasil serta identitas masing-masing; pembersihan lokal tidak otomatis memperbarui versi Sites atau melakukan deployment.
+`build/`, `scripts/`, `vite.config.ts`, konfigurasi/framework/manifes/lockfile dan `.openai/hosting.json` mengatur runtime Sites. `lib/connector*`, `app/chatgpt-auth.ts`, `components/connector-error.tsx` dukungan Sites opsional, bukan fitur POS. `db/`, `drizzle/`, `drizzle.config.ts`, `cloudflare-env.d.ts` mendukung tooling starter, bukan database bisnis prototipe. `node_modules`, `dist`, `.next`, `.wrangler`, `.sites-runtime` dan cache adalah hasil lokal diabaikan.
 
-Root localhost default menampilkan frame tablet landscape **1024×768** termasuk dialog, meski jendela desktop lebih lebar. Buka `http://127.0.0.1:4173/?workspace=responsive` untuk review UI langsung pada ukuran lain. Pembungkus hanya lokal; hosted tetap responsif. Reload menghapus data contoh.
+## Penyimpanan/publikasi
 
-`app/menu-editor.tsx` adalah form tipe/ukuran/topping; `lib/berrie/catalog-editor.ts` menyimpan seluruh SKU form atomik dalam domain simulasi, `menu-config.ts` menangani tipe/kode otomatis dan daftar stok rendah. Notifikasi di aplikasi, tanpa push/WA/email. Build final dan identitas versi layanan dicatat pada tasks.
-
-## Menu dan stok D-57–60
-
-`app/menu-workspace.tsx` menyediakan tabel Menu lima baris per halaman, input 56 px dan baris ≥64 px, dropdown, tempel TSV, duplikat serta penandaan sel salah. Topping/Rincian tombol teks tanpa pill. Tab Stok menggunakan satu saldo untuk seluruh rasa/ukuran menu. `lib/berrie/shared-stock.ts`, `workshop.ts` dan `recipes.ts` memisahkan saldo, perubahan tabel/rekap dan snapshot racikan dari React. Racikan Es/Gula gratis dipilih kasir dan dicetak pada preview struk/dapur. Rekap online mencatat pemakaian per menu dan periode, tanpa omzet/kas; pengingat diaktifkan owner. Semua data tetap simulasi di memori.
-
-Localhost root menyediakan frame tablet 1024×768; `?workspace=tablet` menampilkan workspace langsung untuk pemeriksaan responsif. Model produksi StockGroup/ledger tunggal dan migrasi hitungan fisik belum dibangun.
-
-## UI terkini — D-61–65
-
-`app/menu-workspace.tsx`, `app/variable-editor.tsx` dan `app/variable-picker.tsx` memuat tabel5 baris, + Menu/variabel single-multi/harga kombinasi dan stock modes. `app/cash-workspace.tsx` memisahkan uang selama berjualan dan selesai bertugas. `lib/berrie/menu-variables.ts` + `workshop.ts` memvalidasi kombinasi/snapshot dan koreksi rekap delta/revisi. Tidak ada impor pada UI tahap ini; parser/tes CSV lama tetap sebagai kompatibilitas, bukan fitur aktif. Paste multiline dengan urutan kolom tetap lama diganti pengisian sel/dropdown variabel fleksibel; bulk harga/kategori tetap. Root localhost selalu memakai iframe1024×768. Data contoh hilang saat reload; source/version yang disimpan berbeda dari data demo. Skill UI/UX Pro Max dibaca dari sumber sebagai panduan tambahan, tidak dipasang lokal. Tidak ada deployment.
-
-## Revisi Menu D-66
-
-+ Menu membuka modal dengan Batal; menu baru tampil paling atas termasuk setelah Simpan perubahan. Batal tambah menu tersedia sebelum commit. Kolom Status/Menu/Varian/Harga/Kategori, lalu pilihan/harga channel/Tipe. Varian → nama/pilihan → Lanjut ke harga → Terapkan varian & harga; daftar harga di dialog tanpa + Kombinasi. Pilihan tunggal otomatis, topping multi melalui Harga untuk pilihan lain, harga baru wajib diisi. Diskon sub sendiri di sidebar/workspace; Rincian dihapus, opname dan perubahan stok hanya tab Stok. Token/five rows/tablet tetap. Domain tambahan `variant-prices.ts` menjaga harga/ID/saldo dan batas daftar, tes total77. [Review D-66](REVIEW-MENU-D66.md), identitas simpan pada tasks. Tetap data contoh di memori; tanpa deployment.
-
-## Revisi sebelumnya — D-67 (9 Oktober 2026)
-
-D-67 mendahului checkbox/bulk/preset/harga kombinasi manual/stok dua kegiatan dan sub Diskon pada catatan historis di atas. Menu dua status sel berwarna, Hapus menu berkonfirmasi/histori tetap dan Batal perubahan. Varian satu modal harga dasar + tambahan per pilihan≥0/default pertama berbintang. Stok satu row/menu dengan baseline editable lewat modal alasan/log, minimal editable dan sisa read-only. Diskon tujuan utama; tiga copy rekap dihapus. Domain `option-prices.ts` mempertahankan harga legacy bila aditif dan menahan konflik. [Review D-67](REVIEW-MENU-D67.md). Data contoh memori, localhost tetap frame1024×768; tidak ada deployment.
-
-## Revisi aktif — D-68 (9 Oktober 2026)
-
-Hapus paling kiri/log tanggal-jam-pelaku; Batal/Simpan simetris hanya saat berubah; kategori wajib/tambah inline/CRUD kategori dan tipe; field stok berbingkai tanpa Ubah dan harga rata kiri. Diskon pustaka persen/potongan/Beli X gratis Y, penetapan di samping Varian/per channel, `-` kosong. Beli2 gratis3 berarti qty5 bayar menu2, topping penuh, stok5; snapshot/alokasi refund tetap. Kas mencatat pembuka/waktu dan menjelaskan sumber saldo agar tidak terhitung dua kali.
-
-`app/taxonomy-workspace.tsx`, `discount-workspace.tsx` memuat UI; `lib/berrie/taxonomy.ts`, `discounts.ts` memisahkan validasi/penetapan/alokasi dari React. 95 tes domain; pemeriksaan browser/build/identitas simpan beserta batas pada [review D-68](REVIEW-MENU-KAS-D68.md) dan tasks root. Localhost tetap tablet1024×768, data simulasi memori; tanpa deployment.
-
-
-## Revisi aktif D-69 (10 Oktober 2026)
-
-Jadwal Diskon opsional dalam zona toko (mulai inklusif/selesai eksklusif) dinilai saat quote; item lama tetap snapshot, refresh draft eksplisit. `lib/berrie/local-date.ts` mengonversi input tanggal/jam tanpa bergantung zona browser; `app/use-minute-clock.ts` menyegarkan tampilan saat batas menit/fokus. Prototipe memakai jam perangkat dan data memori, bukan bukti waktu tepercaya/offline produksi. Copy Diskon/Varian/Kas diringkas, Menu/Stok/Rekap memakai gulir vertikal/header sticky; periode rekap sejajar. Kas belum pernah dibuka memakai satu panel/CTA, kas aktif fullwidth/satu saldo bawah breakdown, finish dua jalur pendek dan riwayat disclosure. Label input hitungan akhir dan blocker tetap. [Review D-69](REVIEW-MENU-KAS-D69.md), identitas simpan pada tasks. Root localhost iframe1024×768 tetap; tanpa deployment. Skill UI/UX Pro Max terpasang global sesuai instruksi pemilik, tanpa mengubah token proyek.
+Instruksi pemilik: lokal dan **tanpa deployment**. Sumber lokal D-70–75 belum disimpan sebagai versi layanan baru; latest tersimpan sebelumnya versi12. Simpan versi, commit sumber dan deployment adalah hasil berbeda, jangan mengklaim salah satunya dari build lokal. Akses/identitas Site tetap. Status aktual/checks ada pada [review D-71](REVIEW-KASIR-D71.md) dan [tasks root](../tasks.md).
