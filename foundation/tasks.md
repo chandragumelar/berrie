@@ -525,3 +525,9 @@ T-02/T-03 tetap berjalan dan T-05 belum selesai: katalog/ketersediaan, sesi kas,
 Pemeriksaan fondasi draft pada checkout ini: `npm ci --legacy-peer-deps`, typecheck, lint, 72 tes unit, 9 tes browser Chrome dan build, serta `git diff --check`. Pengujian ini mencakup retry, konflik revisi, rollback, mutasi input, checkpoint/staging dan regresi settlement/refund; bukti tidak menggantikan pengujian fisik atau izin T-04.
 
 Setelah menggabungkan `main` 4c3cfe0 (fondasi draft PR #12), pemeriksaan ulang lulus: `npm ci --legacy-peer-deps`, typecheck, lint, 81 tes unit, 9 tes browser Chrome, build dan `git diff --check`. Lint pertama berbenturan dengan penghapusan direktori hasil oleh tes browser yang berjalan bersamaan; lint ulang setelah browser selesai lulus. Integrasi draft ke perencana stok tetap belum dibuat.
+
+## 1 November 2026 — adapter rencana stok draft tersimpan
+
+`app/src/domain/draft-stock.ts` memvalidasi draft existing dan mapping SKU-ke-grup dari pemanggil, lalu menyerahkan seluruh unit fisik per baris dan saldo ke `planStockDebits`. Saldo/mapping hilang atau ambigu ditolak; promo/gratis tetap dihitung dan pilihan/topping tidak membuat debit terpisah. Hasil kekurangan tanpa rencana parsial. Tes integrasi create/read membandingkan checkpoint seluruh koleksi sebelum dan sesudah sukses, kekurangan dan input gagal; ledger tetap kosong. Ini bukti parsial AC-123/151, bukan debit atau konfirmasi aktual. Adapter hanya untuk draft yang belum pernah confirmed; katalog, izin dan saldo/revisi tetap harus dibaca serta divalidasi ulang oleh command mendatang dalam transaksi. T-05/T-07/T-09, AC operasional, UT dan pilot belum selesai.
+
+Pemeriksaan pada clone berbasis main `6d5af6e`: `npm ci --legacy-peer-deps`, typecheck, lint, 90 tes unit, 9 tes browser Chrome dan build lulus; `git diff --check` lulus. Tes browser adalah regresi storage existing, bukan bukti debit stok aktual.
