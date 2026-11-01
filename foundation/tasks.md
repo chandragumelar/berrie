@@ -510,6 +510,12 @@ Record bertipe versi 1 kini memeriksa keunikan settlement per toko/pesanan, snap
 
 Bukti parsial terkait AC-24/25/30/103 dan AC-43/47/95: regresi settlement duplikat gagal sebelum perbaikan; tes unit memeriksa rollback keenam koleksi, replay, hubungan dan histori checkpoint, dan Chrome IndexedDB dua tab menguji refund unit sama dengan operasi serta key berbeda. Pemeriksaan `foundation/app`: `npm ci --legacy-peer-deps`, typecheck, lint, 48 tes unit, 8 tes browser Chrome dan build; `git diff --check`. T-02/T-03 tetap berjalan: belum ada otorisasi, checkout/refund operasional, sinkronisasi, migrasi/restore produksi, bukti crash atau kuota perangkat, dan pengujian ini tidak membuktikan autentisitas checkpoint maupun kesiapan pilot.
 
+## 1 November 2026 — perencana domain stok bersama
+
+`app/src/domain/stock.ts` menghitung calon debit per grup dari seluruh baris draft yang dipilih, dengan validasi input runtime, rincian sumber dan kegagalan kekurangan tanpa rencana parsial. Tes domain mencakup agregasi lintas SKU, batas qty/saldo, input tidak sah, determinisme/isolasi dan kasus generatif ber-seed. Ini bukti domain parsial AC-123/151 saja: pemanggil masih harus memilih unit belum confirmed dan memvalidasi ulang saldo/revisi di dalam transaksi. Belum ada debit aktual, idempotensi, integrasi atau bukti atomisitas; T-07/T-09, AC operasional dan pilot tetap belum selesai.
+
+Pemeriksaan pada clone berbasis `e2ed7aa`: `npm ci --legacy-peer-deps`, typecheck, lint, 57 tes unit, 8 tes browser Chrome, build dan `git diff --check` lulus. Tes browser adalah regresi storage existing, bukan integrasi perencana stok.
+
 ## Fondasi draft lokal — T-02/T-03 dan awal T-05
 
 Model draft bertipe, validasi unknown dan quote memakai kalkulasi uang/promo bersama; command internal create/update/read menyimpan draft, audit sebelum/sesudah, outbox, receipt dan sequence dalam transaksi Web Locks/Dexie. Nomor pertama dialokasikan dalam transaksi; input tetap dan expected revision melindungi retry/konflik. Draft tidak membuat ledger uang/stok. Validator commit, checkpoint dan receipt historis memeriksa record bertipe serta identitas; staging tidak mengaktifkan atau mengubah sumber. Record generik lama tetap generik. Cakupan terkait AC-06–08, AC-39, AC-48, AC-103, AC-118 dan AC-151; bukti parsial ini bukan kelulusan AC operasional.
@@ -517,3 +523,5 @@ Model draft bertipe, validasi unknown dan quote memakai kalkulasi uang/promo ber
 T-02/T-03 tetap berjalan dan T-05 belum selesai: katalog/ketersediaan, sesi kas, batch, pembayaran, autentikasi/izin T-04, sinkronisasi, printer dan pemulihan produksi belum dihubungkan atau dibangun di sini. Keunikan nomor/ID platform dari data generik lama yang tidak bertipe tidak dapat direkonstruksi otomatis; integrasi/migrasi harus merekonsiliasinya sebelum penggunaan operasional. Tes browser bukan bukti crash perangkat, kuota fisik, keamanan, otorisasi, restore drill atau kesiapan pilot.
 
 Pemeriksaan fondasi draft pada checkout ini: `npm ci --legacy-peer-deps`, typecheck, lint, 72 tes unit, 9 tes browser Chrome dan build, serta `git diff --check`. Pengujian ini mencakup retry, konflik revisi, rollback, mutasi input, checkpoint/staging dan regresi settlement/refund; bukti tidak menggantikan pengujian fisik atau izin T-04.
+
+Setelah menggabungkan `main` 4c3cfe0 (fondasi draft PR #12), pemeriksaan ulang lulus: `npm ci --legacy-peer-deps`, typecheck, lint, 81 tes unit, 9 tes browser Chrome, build dan `git diff --check`. Lint pertama berbenturan dengan penghapusan direktori hasil oleh tes browser yang berjalan bersamaan; lint ulang setelah browser selesai lulus. Integrasi draft ke perencana stok tetap belum dibuat.
