@@ -19,7 +19,7 @@ it('settlement, promo dan refund bertahap round-trip serta replay tanpa mutasi i
  const values=[createSettlementRecord(s),createSettlementRecord(promo()),createRefundHistoryRecord(s,history),{kind:'settlement',legacy:true}];
  expect(s).toEqual(input);expect(history).toEqual(before);s.units[0].skuPrice=1;expect((values[0] as {settlement:typeof s}).settlement).toEqual(input);
  const source=db(),target=db();try {
-  for(let i=0;i<values.length;i++){const c=change(values[i],String(i),i===0?null:i-1,i+1);await commitChange(source,c,locks);const after=await checkpoint(source);expect(after.state[0].value).toEqual(values[i]);expect(await commitChange(source,c,locks)).toBe('ok');expect(await checkpoint(source)).toEqual(after);}
+  for(let i=0;i<values.length;i++){const c=change(values[i],String(i),null,i+1);c.state[0].key=String(i);await commitChange(source,c,locks);const after=await checkpoint(source);expect(after.state.find(row=>row.key===String(i))?.value).toEqual(values[i]);expect(await commitChange(source,c,locks)).toBe('ok');expect(await checkpoint(source)).toEqual(after);}
   const snapshot=await checkpoint(source);validateCheckpoint(snapshot);await stageSnapshot(target,snapshot);expect(await checkpoint(target)).toEqual(snapshot);expect((await checkpoint(source))).toEqual(snapshot);
  } finally {await source.delete();await target.delete();}
 });

@@ -1,6 +1,7 @@
 import { validateBusinessRecord } from '../domain/business-record';
 import { canonical } from './commit';
 import type { Snapshot } from './recovery';
+import { validateTransitions } from './transitions';
 
 type Obj = Record<string, unknown>;
 function fail(path:string, reason:string):never { throw new Error(`Checkpoint ${path}: ${reason}`); }
@@ -90,5 +91,6 @@ export function validateCheckpoint(input:unknown):Snapshot {
  for(const row of sequences) {const n=integer(row.sequence,1,`sequences ${row.key}.sequence`);const numbers=seqs.get(row.key as string);
   if(!numbers || numbers.size!==n || [...numbers].some(v=>v>n) || !numbers.has(n)) fail('sequences',`urutan ${row.key} tidak sesuai receipt`);
  }
+ try { validateTransitions((input as Snapshot).receipts,(input as Snapshot).state); } catch { fail('histori','transisi record bisnis tidak sah'); }
  return input as Snapshot;
 }
