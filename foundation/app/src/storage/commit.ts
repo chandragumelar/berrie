@@ -1,5 +1,6 @@
 import { validateBusinessRecord } from '../domain/business-record';
 import { BerrieDatabase, type EventRow } from './database';
+import { validateTransitions } from './transitions';
 export interface StateChange { key:string; expectedRevision:number | null; value:unknown }
 export interface AtomicChange { operationId:string; storeId:string; deviceId:string; deviceEpoch:number; localSequence:number; kind:string; targetId:string; actorId:string; policyVersion:number; payload:unknown; state:StateChange[]; ledger:EventRow[]; audit:EventRow[]; outbox:EventRow; result:unknown }
 export interface LockProvider { request<T>(name:string, callback:()=>Promise<T>): Promise<T> }
@@ -33,6 +34,10 @@ export async function commitChange(db:BerrieDatabase, input:AtomicChange, locks:
   const existing=await db.receipts.get(change.operationId);
   if(existing) { if(existing.payload!==payload) throw new Error('Konflik operation ID'); return existing.result; }
   for(const row of change.state) { const old=await db.state.get(row.key); if((old?.revision ?? null)!==row.expectedRevision) throw new Error('Revisi berubah'); }
+  const currentState=await db.state.toArray();
+  const projected=currentState.filter(row=>!change.state.some(next=>next.key===row.key));
+  projected.push(...change.state.map(row=>({key:row.key,revision:(row.expectedRevision ?? -1)+1,value:row.value})));
+  validateTransitions([...(await db.receipts.toArray()),{id:change.operationId,payload,result:change.result}],projected);
   const sequenceKey=JSON.stringify([change.storeId,change.deviceId,change.deviceEpoch]);
   const sequence=await db.sequences.get(sequenceKey);
   if(change.localSequence!==(sequence?.sequence ?? 0)+1) throw new Error('Urutan operasi tidak sah');
