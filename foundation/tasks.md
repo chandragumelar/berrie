@@ -496,3 +496,10 @@ Baseline `origin/main` `5d1091f2709e9799a183fe71b648d3278ecaddb1`. Fault injecti
 Chrome dengan IndexedDB nyata menguji abort saat penulisan outbox setelah penulisan sebelumnya, tutup/buka database, perbandingan seluruh checkpoint, retry dan replay. Regresi antar-tab, reload, konflik operation ID, validasi checkpoint dan isolasi input tetap ada. Pemeriksaan `foundation/app`: typecheck, lint, 43 tes unit, 6 tes browser Chrome dan build lulus; `git diff --check` lulus. Terkait AC-09–10, AC-20, AC-30, AC-39, AC-44 dan AC-48 sebagai bukti parsial integritas lokal dan isolasi staging, bukan kelulusan AC operasional atau pemulihan.
 
 T-03 tetap berjalan: crash proses/perangkat, kuota fisik, browser target lain dan invariants bisnis memerlukan bukti tersendiri; aktivasi/swap, backup terenkripsi, migrasi/restore aktual, izin dan sinkronisasi juga belum selesai. Pengujian ini bukan bukti keamanan atau kesiapan pilot.
+
+
+### Validasi record bisnis pada commit dan staging — 1 November 2026
+
+- Bagian T-02/T-03: envelope `settlement` dan `refund-history` versi 1 memakai validator snapshot dan histori domain pada commit, state checkpoint, serta seluruh state dalam receipt historis. Pembentuk record memvalidasi dan menyalin input. Record generik lama tanpa `recordType` tetap memakai kontrak lama dan belum mendapat validasi bisnis; tidak ada migrasi/schema baru atau aktivasi staging. Konsistensi bukan autentisitas maupun otorisasi.
+- Bukti parsial terkait AC-24/25/30/103 dan integritas staging AC-43/47/95: regresi validasi alokasi asal, promo, replay, rollback, histori dan IndexedDB Chrome. Ini bukan pelaksanaan checkout/refund, restore produksi atau kelulusan AC tersebut. T-02/T-03 tetap berjalan.
+- Pemeriksaan lokal: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (46 tes), `npm run test:browser` (7 tes Chrome), `npm run build`, dan `git diff --check`. Belum mencakup otorisasi/server, sinkronisasi, backup terenkripsi, aktivasi restore, perangkat fisik atau pilot.

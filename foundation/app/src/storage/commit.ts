@@ -1,3 +1,4 @@
+import { validateBusinessRecord } from '../domain/business-record';
 import { BerrieDatabase, type EventRow } from './database';
 export interface StateChange { key:string; expectedRevision:number | null; value:unknown }
 export interface AtomicChange { operationId:string; storeId:string; deviceId:string; deviceEpoch:number; localSequence:number; kind:string; targetId:string; actorId:string; policyVersion:number; payload:unknown; state:StateChange[]; ledger:EventRow[]; audit:EventRow[]; outbox:EventRow; result:unknown }
@@ -26,6 +27,7 @@ export async function commitChange(db:BerrieDatabase, input:AtomicChange, locks:
  if(![change.operationId,change.storeId,change.deviceId,change.kind,change.targetId,change.actorId].every(validId) || !positive(change.deviceEpoch) || !positive(change.localSequence) || !positive(change.policyVersion) || !Array.isArray(change.state) || !change.state.length || !Array.isArray(change.ledger) || !Array.isArray(change.audit) || !change.audit.length || !change.outbox || change.outbox.operationId!==change.operationId) throw new Error('Envelope operasi tidak sah');
  if(new Set(change.state.map(x=>x.key)).size!==change.state.length || change.state.some(x=>!validId(x.key) || (x.expectedRevision!==null && !positive(x.expectedRevision,0)))) throw new Error('Revisi state tidak sah');
  if([...change.ledger,...change.audit,change.outbox].some(x=>!validId(x.id) || x.operationId!==change.operationId)) throw new Error('Event operasi tidak sah');
+ for(const row of change.state) validateBusinessRecord(row.value);
  const payload=canonical(change);
  return locks.request(`berrie-writer:${db.name}`,()=>db.transaction('rw',[db.state,db.ledger,db.audit,db.outbox,db.receipts,db.sequences],async()=>{
   const existing=await db.receipts.get(change.operationId);
