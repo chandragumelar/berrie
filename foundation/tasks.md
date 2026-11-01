@@ -539,3 +539,9 @@ Baseline `origin/main` c099a38. Model grup bertipe dan command internal opening,
 Bukti parsial AC-123/134/151: opening, delta koreksi 10→14→9→0, minimum, audit dan kegagalan atomik; belum ada katalog, SKU, debit/return, rekap atau UI. Bukti parsial AC-09/30/48: replay, race, rollback dan penolakan staging rusak pada storage lokal, bukan transaksi penjualan/refund, crash fisik atau migrasi/restore produksi. T-02/T-03 tetap berjalan dan T-07 belum selesai. Actor bukan bukti izin; T-04 dan seluruh gerbang pilot tetap diperlukan.
 
 Pemeriksaan lokal: `npm ci --legacy-peer-deps`, typecheck, lint, 100 tes unit, 10 tes browser Chrome IndexedDB nyata, build dan `git diff --check` lulus. Tidak ada deployment.
+
+## Mapping SKU dan konteks stok draft persisten — 1 November 2026
+
+API internal mendaftarkan mapping tetap per toko/SKU ke grup yang sudah ada secara atomik tanpa ledger atau opening tambahan. Pembaca rencana memakai draft, mapping dan saldo dari satu transaksi baca, mengembalikan revisi sumber dan tidak mengubah koleksi. Validasi commit dan histori checkpoint/staging menolak perubahan mapping atau grup yang hilang; data generik lama tidak dimigrasikan. Unit gratis dihitung sebagai unit fisik. Terkait AC-123/151 sebagai bukti parsial perencanaan; AC-09/30/48 sebagai bukti parsial integritas lokal, bukan kelulusan transaksi operasional atau restore.
+
+Pemeriksaan lokal: `npm ci --legacy-peer-deps`, typecheck, lint, 105 tes unit, 12 tes browser Chrome IndexedDB/Web Locks, build dan `git diff --check` lulus. T-04/T-07 dan gerbang pilot tetap terbuka. Belum ada katalog, UI, debit/konfirmasi, izin, sinkronisasi atau aktivasi restore; command konfirmasi mendatang wajib membaca ulang sumber. Tes browser tidak membuktikan crash fisik, kuota, keamanan atau pemulihan produksi.

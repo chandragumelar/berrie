@@ -19,12 +19,12 @@ export function copyInput(value:unknown):unknown {
  }
  return value;
 }
-function validId(id:unknown): id is string { return typeof id==='string' && id.trim().length>0 && id.length<=200; }
+function validId(id:unknown): boolean { return typeof id==='string' && id.trim().length>0 && id.length<=200; }
 function positive(v:unknown, min=1):v is number { return typeof v==='number' && Number.isSafeInteger(v) && v>=min; }
 /** Execute only within the writer lock and a transaction covering all six collections. */
 async function commitInTransaction(db:BerrieDatabase, change:AtomicChange):Promise<unknown> {
  if(![change.operationId,change.storeId,change.deviceId,change.kind,change.targetId,change.actorId].every(validId) || !positive(change.deviceEpoch) || !positive(change.localSequence) || !positive(change.policyVersion) || !Array.isArray(change.state) || !change.state.length || !Array.isArray(change.ledger) || !Array.isArray(change.audit) || !change.audit.length || !change.outbox || change.outbox.operationId!==change.operationId) throw new Error('Envelope operasi tidak sah');
- if(new Set(change.state.map(x=>x.key)).size!==change.state.length || change.state.some(x=>!validId(x.key) || (x.expectedRevision!==null && (!positive(x.expectedRevision,0) || x.expectedRevision===Number.MAX_SAFE_INTEGER)))) throw new Error('Revisi state tidak sah');
+ if(new Set(change.state.map(x=>x.key)).size!==change.state.length || change.state.some(x=>!(validId(x.key) || (typeof x.key==='string' && x.key.startsWith('sku-stock-mapping:') && x.key.length<=2500 && !!x.value && typeof x.value==='object' && 'recordType' in x.value && x.value.recordType==='sku-stock-mapping')) || (x.expectedRevision!==null && (!positive(x.expectedRevision,0) || x.expectedRevision===Number.MAX_SAFE_INTEGER)))) throw new Error('Revisi state tidak sah');
  if([...change.ledger,...change.audit,change.outbox].some(x=>!validId(x.id) || x.operationId!==change.operationId)) throw new Error('Event operasi tidak sah');
  for(const row of change.state) validateBusinessRecord(row.value);
  const payload=canonical(change);
