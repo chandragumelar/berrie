@@ -1,6 +1,6 @@
 # Berrie — Tahapan kerja
 
-**D-78:** workspace Pesanan selesai di prototipe lokal; [review dan bukti](berrie-site/REVIEW-PESANAN-D78.md). D-77 dan D-78 telah merged; baseline fondasi GitHub saat ini `d306011`. Penguatan T-02 dilakukan pada branch terpisah; tidak ada versi layanan atau deployment baru.
+**D-78:** workspace Pesanan selesai di prototipe lokal; [review dan bukti](berrie-site/REVIEW-PESANAN-D78.md). D-77 dan D-78 telah merged; baseline inspeksi fondasi GitHub `c099a38` (PR #14). Fondasi grup stok dikerjakan pada branch terpisah; tidak ada versi layanan atau deployment baru.
 
 Terakhir diperbarui: **1 November 2026**. Dokumen ini melacak pelaksanaan, bukan mengganti keputusan produk. Sumber kebenaran: [spesifikasi](specs/README.md); urutan pembangunan mengikuti [file 01](specs/01-product-scope.md), gerbang kelulusan mengikuti [file 10](specs/10-acceptance-criteria.md).
 
@@ -531,3 +531,11 @@ Setelah menggabungkan `main` 4c3cfe0 (fondasi draft PR #12), pemeriksaan ulang l
 `app/src/domain/draft-stock.ts` memvalidasi draft existing dan mapping SKU-ke-grup dari pemanggil, lalu menyerahkan seluruh unit fisik per baris dan saldo ke `planStockDebits`. Saldo/mapping hilang atau ambigu ditolak; promo/gratis tetap dihitung dan pilihan/topping tidak membuat debit terpisah. Hasil kekurangan tanpa rencana parsial. Tes integrasi create/read membandingkan checkpoint seluruh koleksi sebelum dan sesudah sukses, kekurangan dan input gagal; ledger tetap kosong. Ini bukti parsial AC-123/151, bukan debit atau konfirmasi aktual. Adapter hanya untuk draft yang belum pernah confirmed; katalog, izin dan saldo/revisi tetap harus dibaca serta divalidasi ulang oleh command mendatang dalam transaksi. T-05/T-07/T-09, AC operasional, UT dan pilot belum selesai.
 
 Pemeriksaan pada clone berbasis main `6d5af6e`: `npm ci --legacy-peer-deps`, typecheck, lint, 90 tes unit, 9 tes browser Chrome dan build lulus; `git diff --check` lulus. Tes browser adalah regresi storage existing, bukan bukti debit stok aktual.
+
+## Fondasi grup stok persisten — T-02/T-03 dan bagian T-07
+
+Baseline `origin/main` c099a38. Model grup bertipe dan command internal opening, koreksi baseline beralasan dan minimum menggunakan Web Locks serta transaksi enam koleksi; opening nol tetap menghasilkan ledger, perubahan minimum tidak. Retry identik, konflik ID operasi, revisi/saldo basi, isolasi toko, validasi histori/ledger pada commit dan staging, serta kompatibilitas record generik diuji. Tidak ada migrasi atau aktivasi staging. Kontrak pemanggilan ada di `app/README.md`.
+
+Bukti parsial AC-123/134/151: opening, delta koreksi 10→14→9→0, minimum, audit dan kegagalan atomik; belum ada katalog, SKU, debit/return, rekap atau UI. Bukti parsial AC-09/30/48: replay, race, rollback dan penolakan staging rusak pada storage lokal, bukan transaksi penjualan/refund, crash fisik atau migrasi/restore produksi. T-02/T-03 tetap berjalan dan T-07 belum selesai. Actor bukan bukti izin; T-04 dan seluruh gerbang pilot tetap diperlukan.
+
+Pemeriksaan lokal: `npm ci --legacy-peer-deps`, typecheck, lint, 100 tes unit, 10 tes browser Chrome IndexedDB nyata, build dan `git diff --check` lulus. Tidak ada deployment.
