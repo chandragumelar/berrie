@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 import { BerrieDatabase } from './database';
 import { commitChange, type AtomicChange, type LockProvider } from './commit';
 import { checkpoint, stageSnapshot } from './recovery';
@@ -21,8 +21,20 @@ it('menolak checkpoint rusak sebelum menulis dan tanpa mengubah input atau sumbe
 it('staging terisi ditolak tanpa perubahan',async()=>{
  const source=db(), target=db();try {await commitChange(source,change,locks);const snapshot=await checkpoint(source);await stageSnapshot(target,snapshot);const before=await checkpoint(target);await expect(stageSnapshot(target,snapshot)).rejects.toThrow('Staging tidak kosong');expect(await checkpoint(target)).toEqual(before);expect(await checkpoint(source)).toEqual(snapshot);} finally {await source.delete();await target.delete();}
 });
-it('kegagalan penulisan di tengah transaksi membatalkan enam koleksi',async()=>{
- const source=db(), target=db();try {await commitChange(source,change,locks);const snapshot=await checkpoint(source), before=await checkpoint(target);const spy=vi.spyOn(target.outbox,'bulkAdd').mockRejectedValueOnce(new Error('penulisan gagal'));await expect(stageSnapshot(target,snapshot)).rejects.toThrow('penulisan gagal');spy.mockRestore();expect(await checkpoint(target)).toEqual(before);expect(await checkpoint(source)).toEqual(snapshot);} finally {await source.delete();await target.delete();}
+it.each(['state','ledger','audit','outbox','receipts','sequences'] as const)('rollback staging pada penulisan %s dan retry snapshot',async(collection)=>{
+ const source=db(), target=db();try {
+  await commitChange(source,change,locks);
+  const snapshot=await checkpoint(source), before=await checkpoint(target);
+  const hook=()=>{throw new Error(`gagal ${collection}`)};
+  target[collection].hook('creating',hook);
+  await expect(stageSnapshot(target,snapshot)).rejects.toThrow(`gagal ${collection}`);
+  target[collection].hook('creating').unsubscribe(hook);
+  expect(await checkpoint(target)).toEqual(before);
+  expect(await checkpoint(source)).toEqual(snapshot);
+  await stageSnapshot(target,snapshot);
+  expect(await checkpoint(target)).toEqual(snapshot);
+  expect(await checkpoint(source)).toEqual(snapshot);
+ } finally {await source.delete();await target.delete();}
 });
 it.each(['nested','arrays'])('staging mengisolasi mutasi %s',async(mode)=>{
  const source=db(),target=db();try {

@@ -54,3 +54,30 @@ test('staging IndexedDB mengisolasi mutasi input hingga dibuka kembali',async({p
   } finally {await source.delete();await stage.delete();}
  });expect(evidence.staged).toEqual(evidence.before);expect(evidence.sourceAfter).toEqual(evidence.before);
 });
+
+test('abort penulisan IndexedDB bertahan setelah buka ulang dan retry tepat sekali',async({page})=>{
+ await page.goto('/');
+ const evidence=await page.evaluate(async()=>{
+  const {BerrieDatabase}=await import('/src/storage/database.ts');
+  const {commitChange}=await import('/src/storage/commit.ts');
+  const {checkpoint}=await import('/src/storage/recovery.ts');
+  const name=`abort-write-${crypto.randomUUID()}`,db=new BerrieDatabase(name);
+  const base={operationId:'awal',storeId:'s',deviceId:'d',deviceEpoch:1,localSequence:1,kind:'test',targetId:'stock',actorId:'a',policyVersion:1,payload:{qty:1},state:[{key:'stock',expectedRevision:null as number|null,value:9}],ledger:[{id:'l-awal',operationId:'awal',value:-1}],audit:[{id:'a-awal',operationId:'awal',value:'awal'}],outbox:{id:'o-awal',operationId:'awal',value:'awal'},result:{ok:true}};
+  const input={...base,operationId:'retry',localSequence:2,state:[{key:'stock',expectedRevision:0,value:8}],ledger:[{id:'l-retry',operationId:'retry',value:-1}],audit:[{id:'a-retry',operationId:'retry',value:'retry'}],outbox:{id:'o-retry',operationId:'retry',value:'retry'}};
+  let reopened:InstanceType<typeof BerrieDatabase>|undefined;
+  try {
+   await commitChange(db,base);const before=await checkpoint(db);
+   let hit=false;db.outbox.hook('creating',()=>{hit=true;throw new Error('abort penulisan')});
+   let failed=false;try{await commitChange(db,input)}catch{failed=true}
+   db.close();reopened=new BerrieDatabase(name);const afterAbort=await checkpoint(reopened);
+   const result=await commitChange(reopened,input),afterSuccess=await checkpoint(reopened);
+   const replay=await commitChange(reopened,input),afterReplay=await checkpoint(reopened);
+   return {before,afterAbort,afterSuccess,afterReplay,result,replay,hit,failed};
+  } finally {db.close();if(reopened) await reopened.delete();else await db.delete();}
+ });
+ expect(evidence.hit).toBe(true);expect(evidence.failed).toBe(true);expect(evidence.afterAbort).toEqual(evidence.before);
+ expect(evidence.result).toEqual({ok:true});expect(evidence.replay).toEqual(evidence.result);
+ expect(evidence.afterSuccess.state).toEqual([{key:'stock',revision:1,value:8}]);expect(evidence.afterSuccess.sequences[0].sequence).toBe(2);
+ for(const collection of ['ledger','audit','outbox','receipts'] as const) expect(evidence.afterSuccess[collection]).toHaveLength(2);
+ expect(evidence.afterReplay).toEqual(evidence.afterSuccess);
+});
