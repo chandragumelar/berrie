@@ -26,7 +26,7 @@ function array(value:unknown, path:string):unknown[] {
 }
 function uniqueRows(rows:unknown[], key:string, path:string):Obj[] {
  const seen=new Set<string>();
- return rows.map((value,i)=>{const row=object(value,`${path}[${i}]`);const k=path==='sequences' && typeof row[key]==='string' && row[key] ? row[key] as string : id(row[key],`${path}[${i}].${key}`);if(seen.has(k)) fail(path, `kunci duplikat: ${k}`);seen.add(k);return row;});
+ return rows.map((value,i)=>{const row=object(value,`${path}[${i}]`);const k=path==='state' && typeof row[key]==='string' && (row[key] as string).startsWith('sku-stock-mapping:') && (row[key] as string).length<=2500 && !!row.value && typeof row.value==='object' && 'recordType' in row.value && row.value.recordType==='sku-stock-mapping' ? row[key] as string : path==='sequences' && typeof row[key]==='string' && row[key] ? row[key] as string : id(row[key],`${path}[${i}].${key}`);if(seen.has(k)) fail(path, `kunci duplikat: ${k}`);seen.add(k);return row;});
 }
 function event(value:unknown, path:string, operationId?:string):Obj {
  const row=object(value,path); id(row.id,`${path}.id`); const op=id(row.operationId,`${path}.operationId`);
@@ -66,7 +66,7 @@ export function validateCheckpoint(input:unknown):Snapshot {
   const states=array(change.state,`${path}.state`); if(!states.length) fail(path,'state operasi kosong');
   const keys=new Set<string>();
   for(const item of states) {
-   const row=object(item,`${path}.state`); const key=id(row.key,`${path}.state.key`); if(keys.has(key)) fail(path,'state operasi duplikat'); keys.add(key);
+   const row=object(item,`${path}.state`); const key=typeof row.key==='string' && row.key.startsWith('sku-stock-mapping:') && row.key.length<=2500 && !!row.value && typeof row.value==='object' && 'recordType' in row.value && row.value.recordType==='sku-stock-mapping' ? row.key : id(row.key,`${path}.state.key`); if(keys.has(key)) fail(path,'state operasi duplikat'); keys.add(key);
    const rev=row.expectedRevision===null ? 0 : integer(row.expectedRevision,0,`${path}.expectedRevision`)+1;
    if(!Number.isSafeInteger(rev)) fail(path,'revisi melampaui batas');
    business(row.value,`${path}.state.value`); const value=data(row.value,`${path}.state.value`); const versions=history.get(key) ?? new Map<number,string>(); if(versions.has(rev)) fail(path,'revisi state duplikat'); versions.set(rev,value);history.set(key,versions);

@@ -13,6 +13,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  const changes=receipts.map(r=>JSON.parse(r.payload) as AtomicChange);
  const byKey=new Map<string,{change:AtomicChange; revision:number; value:unknown}[]>();
  for(const change of changes) for(const row of change.state) {
+  if(change.kind==='mapping.create' && (!row.value || typeof row.value!=='object' || !('recordType' in row.value) || row.value.recordType!=='sku-stock-mapping')) throw new Error('Record pemetaan wajib bertipe');
   if(change.kind.startsWith('stock.') && (!row.value || typeof row.value!=='object' || !('recordType' in row.value) || row.value.recordType!=='stock-group')) throw new Error('Record stok wajib bertipe');
   const versions=byKey.get(row.key) ?? [];
   versions.push({change,revision:(row.expectedRevision ?? -1)+1,value:row.value});byKey.set(row.key,versions);
@@ -40,6 +41,17 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='sku-stock-mapping') {
+    const m=current.mapping, c=v.change, p=c.payload as {data?:unknown;metadata?:Record<string,unknown>} | null;
+    const target=stateByKey.get(`stock-group:${m.groupId}`), group=typed(target?.value);
+    if(v.revision!==0 || i!==0 || key!==`sku-stock-mapping:${JSON.stringify([m.storeId,m.skuId])}` || c.kind!=='mapping.create' || c.targetId!==m.skuId || m.storeId!==owner || c.state.length!==1 || c.ledger.length!==0 || c.audit.length!==1 || !p?.metadata || canonical(p.data)!==canonical({skuId:m.skuId,groupId:m.groupId}) || !group || group.recordType!=='stock-group' || group.stockGroup.storeId!==m.storeId) throw new Error('Histori pemetaan tidak sah');
+    for(const field of ['operationId','storeId','deviceId','deviceEpoch','localSequence','actorId','policyVersion'] as const) if(p.metadata[field]!==c[field]) throw new Error('Metadata pemetaan tidak sesuai');
+    const audit=c.audit[0].value as Record<string,unknown>;
+    if(!audit || typeof audit.recordedAt!=='string' || !Number.isFinite(Date.parse(audit.recordedAt)) || typeof p.metadata.recordedAt!=='string' || !Number.isFinite(Date.parse(p.metadata.recordedAt))) throw new Error('Waktu pemetaan tidak sah');
+    if(canonical(c.audit)!==canonical([{id:`mapping-audit:${c.operationId}`,operationId:c.operationId,value:{mapping:m,actorId:c.actorId,policyVersion:c.policyVersion,occurredAt:p.metadata.recordedAt,recordedAt:audit.recordedAt}}]) || canonical(c.outbox)!==canonical({id:`mapping-outbox:${c.operationId}`,operationId:c.operationId,value:{skuId:m.skuId}}) || canonical(c.result)!==canonical({mapping:m,revision:0})) throw new Error('Histori pemetaan tidak sesuai');
+    const source=byKey.get(`stock-group:${m.groupId}`)?.find(x=>x.revision===0); if(!source) throw new Error('Grup asal tidak ada'); edge(source.change.operationId,c.operationId);
+    previous=current; continue;
+   }
    if(current.recordType==='stock-group') {
     const g=current.stockGroup, change=v.change, prev=previous?.recordType==='stock-group'?previous.stockGroup:null;
     const action=v.revision===0?'opening':change.kind==='stock.correction'?'correction':change.kind==='stock.minimum'?'minimum':null;
@@ -87,7 +99,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     previous=current; continue;
    }
    const identity=JSON.stringify([owner,current.settlement.orderId]);
-   if(previous && previous.recordType!=='draft' && previous.recordType!=='stock-group' && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
+   if(previous && previous.recordType!=='draft' && previous.recordType!=='stock-group' && previous.recordType!=='sku-stock-mapping' && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
    if(current.recordType==='settlement') {
     const existing=settlements.get(identity);
     if(existing && existing.key!==key) throw new Error('Settlement duplikat');
@@ -105,7 +117,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const numbers of draftSequences.values()) for(let i=1;i<=numbers.size;i++) if(!numbers.has(i)) throw new Error('Urutan nomor draft tidak lengkap');
  for(const identity of draftOrders.keys()) if(settlements.has(identity) || refunds.has(identity)) throw new Error('Draft sudah memiliki settlement');
  for(const row of state) if(typed(row.value) && !byKey.has(row.key)) throw new Error('Record bisnis tanpa receipt');
- for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='draft' || source.value.recordType==='stock-group' ? null : source.value.settlement)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
+ for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='draft' || source.value.recordType==='stock-group' || source.value.recordType==='sku-stock-mapping' ? null : source.value.settlement)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
  const indegree=new Map(changes.map(change=>[change.operationId,0]));
  for(const next of edges.values()) for(const id of next) indegree.set(id,(indegree.get(id) ?? 0)+1);
  const ready=[...indegree].filter(([,count])=>count===0).map(([id])=>id);let visited=0;

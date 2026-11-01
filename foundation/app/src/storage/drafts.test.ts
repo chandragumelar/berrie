@@ -32,3 +32,69 @@ it('commit menolak record draft rusak sebelum menulis',async()=>{const db=new Be
 it('savedAt dan nomor memakai waktu setelah lock; retry tidak membaca jam lagi',async()=>{const db=new BerrieDatabase(crypto.randomUUID());try{let release!:()=>void,entered!:()=>void,calls=0;const held=new Promise<void>(r=>{release=r}),ready=new Promise<void>(r=>{entered=r});const blocked:LockProvider={request:async(_n,fn)=>{entered();await held;return fn()}};const clock=()=>{calls++;return '2026-11-01T01:00:00Z'};const d=draft(),m=meta('one',1),pending=createDraft(db,d,m,blocked,clock);await ready;expect(calls).toBe(0);release();await pending;expect((await readDraft(db,d.orderId))?.draft.savedAt).toBe('2026-11-01T01:00:00Z');expect((await checkpoint(db)).audit[0].value).toMatchObject({occurredAt:m.recordedAt,recordedAt:'2026-11-01T01:00:00Z'});await createDraft(db,d,m,locks,clock);expect(calls).toBe(1);}finally{await db.delete();}});
 it('quote draft memakai promo dan alokasi domain tanpa membekukan settlement',async()=>{const {calculateDraft}=await import('../domain/draft');const d=draft();d.items[0].unitIds=['00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000009','00000000-0000-4000-8000-000000000010'];const quoted={...d,items:[{...d.items[0],promo:{kind:'buyXGetY' as const,buy:2,free:1,promotionId:'promo',revision:1}}]};const before=structuredClone(quoted);validateDraft(quoted);const totals=calculateDraft(quoted);expect(totals.subtotal).toBe(30000);expect(totals.promo).toBe(10000);expect(totals.total).toBe(20000);expect(quoted).toEqual(before);});
 it('rencana stok draft tersimpan tidak mengubah koleksi pada sukses maupun gagal',async()=>{const {planDraftStockDebits}=await import('../domain/draft-stock');const db=new BerrieDatabase(crypto.randomUUID());try{const d=draft();await createDraft(db,d,meta('one',1),locks,()=> '2026-11-01T00:00:00Z');const saved=(await readDraft(db,d.orderId))!.draft;const before=await checkpoint(db);const input={draft:saved,skuGroups:[{skuId:saved.items[0].skuId,groupId:'g'}],balances:[{groupId:'g',balance:50}]};expect(planDraftStockDebits(input)).toMatchObject({ok:true,debits:[{required:1,after:49}]});expect(await checkpoint(db)).toEqual(before);expect(planDraftStockDebits({...input,balances:[{groupId:'g',balance:0}]})).toMatchObject({ok:false});expect(()=>planDraftStockDebits({...input,balances:[]})).toThrow();expect(await checkpoint(db)).toEqual(before);expect(before.ledger).toEqual([]);}finally{await db.delete();}});
+
+it('mapping persisten dan rencana membaca saldo bersama tanpa menulis',async()=>{
+ const {createStockGroup,correctStockBaseline}=await import('./stock-groups');
+ const {registerSkuStockMapping,readSkuStockMapping}=await import('./sku-stock-mappings');
+ const {planStoredDraftStock}=await import('./draft-stock');
+ const db=new BerrieDatabase(crypto.randomUUID()),stage=new BerrieDatabase(crypto.randomUUID());
+ try {
+  const d=draft(), sku=d.items[0].skuId, now=()=> '2026-11-01T00:00:00Z';
+  await createStockGroup(db,{groupId:'g',balance:1},meta('group',1),locks,now);
+  const input={skuId:sku,groupId:'g'}, result=await registerSkuStockMapping(db,input,meta('map',2),locks,now);
+  expect(await registerSkuStockMapping(db,input,meta('map',2),locks,now)).toEqual(result);
+  await createDraft(db,d,meta('draft',3),locks,now);
+  expect((await readSkuStockMapping(db,'store',sku))?.mapping.groupId).toBe('g');
+  const before=await checkpoint(db);
+  expect(await planStoredDraftStock(db,'store',d.orderId)).toMatchObject({plan:{ok:true,debits:[{required:1,after:0}]},sources:{draftRevision:0,groups:[{revision:0}]}});
+  await expect(planStoredDraftStock(db,'other',d.orderId)).rejects.toThrow();
+  await expect(registerSkuStockMapping(db,input,meta('duplicate',4),locks,now)).rejects.toThrow();
+  await expect(registerSkuStockMapping(db,{...input,groupId:'missing'},meta('map',2),locks,now)).rejects.toThrow();
+  expect(await checkpoint(db)).toEqual(before);
+  await stageSnapshot(stage,before);expect(await checkpoint(stage)).toEqual(before);
+  await correctStockBaseline(db,{groupId:'g',value:0,reason:'count',expectedRevision:0,expectedBalance:1},meta('correct',4),locks,now);
+  const after=await checkpoint(db);expect(await planStoredDraftStock(db,'store',d.orderId)).toMatchObject({plan:{ok:false},sources:{groups:[{revision:1,balance:0}]}});expect(await checkpoint(db)).toEqual(after);
+ } finally {await db.delete();await stage.delete();}
+});
+
+it('mapping menolak duplikat, referensi hilang, input rusak dan rollback; input dibekukan sebelum lock',async()=>{
+ const {createStockGroup}=await import('./stock-groups');const {registerSkuStockMapping,readSkuStockMapping}=await import('./sku-stock-mappings');
+ const db=new BerrieDatabase(crypto.randomUUID()),stage=new BerrieDatabase(crypto.randomUUID());const now=()=> '2026-11-01T00:00:00Z';
+ try {
+  await createStockGroup(db,{groupId:'g',balance:10},meta('open',1),locks,now);
+  let release!:()=>void,entered!:()=>void;const held=new Promise<void>(r=>release=r),ready=new Promise<void>(r=>entered=r);
+  const blocked:LockProvider={request:async(_n,fn)=>{entered();await held;return fn()}};
+  const data={skuId:'sku',groupId:'g'},m=meta('map',2),pending=registerSkuStockMapping(db,data,m,blocked,now);await ready;data.groupId='other';m.actorId='other';release();await pending;
+  expect(await readSkuStockMapping(db,'store','sku')).toMatchObject({mapping:{groupId:'g'}});
+  const before=await checkpoint(db);
+  await expect(registerSkuStockMapping(db,{skuId:'new',groupId:'missing'},meta('missing',3),locks,now)).rejects.toThrow();
+  await expect(registerSkuStockMapping(db,{skuId:'new',groupId:'g'},{...meta('cross',1),storeId:'other'},locks,now)).rejects.toThrow();
+  await expect(registerSkuStockMapping(db,{skuId:'sku',groupId:'other'},meta('move',3),locks,now)).rejects.toThrow();
+  expect(()=>registerSkuStockMapping(db,{skuId:'',groupId:'g'},meta('bad',3),locks,now)).toThrow();
+  const hook=()=>{throw new Error('abort')};db.outbox.hook('creating',hook);
+  await expect(registerSkuStockMapping(db,{skuId:'new',groupId:'g'},meta('new',3),locks,now)).rejects.toThrow('abort');db.outbox.hook('creating').unsubscribe(hook);
+  expect(await checkpoint(db)).toEqual(before);
+  const bad=structuredClone(before);const entry=bad.receipts.find(r=>r.id==='map')!;const change=JSON.parse(entry.payload);change.state[0].value.mapping.groupId='missing';const {canonical}=await import('./commit');entry.payload=canonical(change);
+  await expect(stageSnapshot(stage,bad)).rejects.toThrow();expect((await checkpoint(stage)).state).toEqual([]);expect(await checkpoint(db)).toEqual(before);
+  await registerSkuStockMapping(db,{skuId:'new',groupId:'g'},meta('new',3),locks,now);expect((await checkpoint(db)).ledger).toHaveLength(1);
+ } finally {await db.delete();await stage.delete();}
+});
+
+it('dua SKU memakai satu saldo untuk 200 unit termasuk promo gratis',async()=>{
+ const {createStockGroup}=await import('./stock-groups');const {registerSkuStockMapping}=await import('./sku-stock-mappings');const {planStoredDraftStock}=await import('./draft-stock');
+ const db=new BerrieDatabase(crypto.randomUUID()),now=()=> '2026-11-01T00:00:00Z';
+ try {const d=draft(), first=d.items[0];first.unitIds=Array.from({length:199},(_,i)=>`00000000-0000-4000-8000-${String(i+100).padStart(12,'0')}`);first.promo={kind:'none',revision:0};const second={...structuredClone(first),promo:{kind:'buyXGetY' as const,buy:2,free:1,promotionId:'p',revision:1}};second.id='00000000-0000-4000-8000-000000000007';second.skuId='00000000-0000-4000-8000-000000000008';second.unitIds=['00000000-0000-4000-8000-000000000009'];d.items.push(second);
+ await createStockGroup(db,{groupId:'g',balance:200},meta('open',1),locks,now);await registerSkuStockMapping(db,{skuId:first.skuId,groupId:'g'},meta('m1',2),locks,now);await registerSkuStockMapping(db,{skuId:second.skuId,groupId:'g'},meta('m2',3),locks,now);await createDraft(db,d,meta('draft',4),locks,now);
+ const before=await checkpoint(db);expect(await planStoredDraftStock(db,'store',d.orderId)).toMatchObject({plan:{ok:true,debits:[{required:200,before:200,after:0}]}});expect(await checkpoint(db)).toEqual(before);expect(before.ledger).toHaveLength(1);
+ }finally{await db.delete()}
+});
+
+it('SKU sama dapat dipetakan terpisah antar toko dan referensi harus setoko',async()=>{
+ const {createStockGroup}=await import('./stock-groups');const {registerSkuStockMapping,readSkuStockMapping}=await import('./sku-stock-mappings');const db=new BerrieDatabase(crypto.randomUUID()),now=()=> '2026-11-01T00:00:00Z';
+ try{const other=(id:string,n:number)=>({...meta(id,n),storeId:'other'});await createStockGroup(db,{groupId:'g1',balance:5},meta('g1',1),locks,now);await createStockGroup(db,{groupId:'g2',balance:5},other('g2',1),locks,now);await registerSkuStockMapping(db,{skuId:'same',groupId:'g1'},meta('m1',2),locks,now);await expect(registerSkuStockMapping(db,{skuId:'same',groupId:'g1'},other('bad',2),locks,now)).rejects.toThrow();await registerSkuStockMapping(db,{skuId:'same',groupId:'g2'},other('m2',2),locks,now);expect((await readSkuStockMapping(db,'other','same'))?.mapping.groupId).toBe('g2');expect((await readSkuStockMapping(db,'store','same'))?.mapping.groupId).toBe('g1');}finally{await db.delete()}
+});
+
+it('staging menolak histori mapping yang diubah secara konsisten ke grup hilang',async()=>{
+ const {createStockGroup}=await import('./stock-groups');const {registerSkuStockMapping}=await import('./sku-stock-mappings');const {canonical}=await import('./commit');const db=new BerrieDatabase(crypto.randomUUID()),stage=new BerrieDatabase(crypto.randomUUID()),now=()=> '2026-11-01T00:00:00Z';
+ try{await createStockGroup(db,{groupId:'g',balance:1},meta('open',1),locks,now);await registerSkuStockMapping(db,{skuId:'sku',groupId:'g'},meta('map',2),locks,now);const before=await checkpoint(db),bad=structuredClone(before),receipt=bad.receipts.find(r=>r.id==='map')!,c=JSON.parse(receipt.payload);c.payload.data.groupId='missing';c.state[0].value.mapping.groupId='missing';c.audit[0].value.mapping.groupId='missing';c.result.mapping.groupId='missing';receipt.payload=canonical(c);receipt.result=c.result;bad.state.find(r=>r.key===c.state[0].key)!.value=c.state[0].value;bad.audit.find(r=>r.id===c.audit[0].id)!.value=c.audit[0].value;await expect(stageSnapshot(stage,bad)).rejects.toThrow();expect((await checkpoint(stage)).state).toEqual([]);expect(await checkpoint(db)).toEqual(before);}finally{await db.delete();await stage.delete()}
+});
