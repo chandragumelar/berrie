@@ -1,3 +1,4 @@
+import { validateBusinessRecord } from '../domain/business-record';
 import { canonical } from './commit';
 import type { Snapshot } from './recovery';
 
@@ -31,7 +32,10 @@ function event(value:unknown, path:string, operationId?:string):Obj {
  if(operationId !== undefined && op !== operationId) fail(path, 'operationId berbeda dari receipt');
  data(row, path); return row;
 }
-/** Validates the schema-1 storage contract, not authenticity or untyped business values. */
+function business(value:unknown, path:string):void {
+ try { validateBusinessRecord(value); } catch { fail(path, 'record bisnis tidak sah'); }
+}
+/** Validates storage and marked business records, not authenticity or untyped business values. */
 export function validateCheckpoint(input:unknown):Snapshot {
  const root=object(input,'root'); if(root.schema!==1) fail('schema','versi tidak didukung');
  const state=uniqueRows(array(root.state,'state'),'key','state');
@@ -40,7 +44,7 @@ export function validateCheckpoint(input:unknown):Snapshot {
  const outbox=uniqueRows(array(root.outbox,'outbox'),'id','outbox');
  const receipts=uniqueRows(array(root.receipts,'receipts'),'id','receipts');
  const sequences=uniqueRows(array(root.sequences,'sequences'),'key','sequences');
- for(const row of state) { integer(row.revision,0,`state ${row.key}.revision`); data(row.value,`state ${row.key}.value`); }
+ for(const row of state) { integer(row.revision,0,`state ${row.key}.revision`); data(row.value,`state ${row.key}.value`); business(row.value,`state ${row.key}.value`); }
  const receiptIds=new Set(receipts.map(r=>r.id));
  for(const [name,rows] of [['ledger',ledger],['audit',audit],['outbox',outbox]] as const) for(const row of rows) {
   event(row,`${name} ${row.id}`); if(!receiptIds.has(row.operationId)) fail(name,`receipt tidak ditemukan untuk ${row.operationId}`);
@@ -64,7 +68,7 @@ export function validateCheckpoint(input:unknown):Snapshot {
    const row=object(item,`${path}.state`); const key=id(row.key,`${path}.state.key`); if(keys.has(key)) fail(path,'state operasi duplikat'); keys.add(key);
    const rev=row.expectedRevision===null ? 0 : integer(row.expectedRevision,0,`${path}.expectedRevision`)+1;
    if(!Number.isSafeInteger(rev)) fail(path,'revisi melampaui batas');
-   const value=data(row.value,`${path}.state.value`); const versions=history.get(key) ?? new Map<number,string>(); if(versions.has(rev)) fail(path,'revisi state duplikat'); versions.set(rev,value);history.set(key,versions);
+   business(row.value,`${path}.state.value`); const value=data(row.value,`${path}.state.value`); const versions=history.get(key) ?? new Map<number,string>(); if(versions.has(rev)) fail(path,'revisi state duplikat'); versions.set(rev,value);history.set(key,versions);
   }
   for(const name of ['ledger','audit','outbox'] as const) {
    const rows=name==='outbox'?[change.outbox]:array(change[name],`${path}.${name}`);

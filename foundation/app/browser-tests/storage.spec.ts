@@ -81,3 +81,15 @@ test('abort penulisan IndexedDB bertahan setelah buka ulang dan retry tepat seka
  for(const collection of ['ledger','audit','outbox','receipts'] as const) expect(evidence.afterSuccess[collection]).toHaveLength(2);
  expect(evidence.afterReplay).toEqual(evidence.afterSuccess);
 });
+test('record settlement dan refund bertahan di IndexedDB setelah staging dan buka ulang',async({page})=>{
+ await page.goto('/');const result=await page.evaluate(async()=>{
+  const {BerrieDatabase}=await import('/src/storage/database.ts');const {commitChange}=await import('/src/storage/commit.ts');const {checkpoint,stageSnapshot}=await import('/src/storage/recovery.ts');
+  const {freezeSettlement,refund}=await import('/src/domain/settlement.ts');const {createSettlementRecord,createRefundHistoryRecord}=await import('/src/domain/business-record.ts');
+  const snapshot=freezeSettlement('order',[{unitIds:['A'],skuId:'a',skuPrice:10000,toppingPrice:0,promo:{kind:'none',revision:1}},{unitIds:['B'],skuId:'b',skuPrice:20000,toppingPrice:0,promo:{kind:'none',revision:1}}],{kind:'amount',value:1000},1000,500,'payment');
+  const first=refund(snapshot,[],['A']),second=refund(snapshot,[first],['B']);const values=[createSettlementRecord(snapshot),createRefundHistoryRecord(snapshot,[first,second])];
+  const name=`typed-${crypto.randomUUID()}`,source=new BerrieDatabase(name),stage=new BerrieDatabase(name+'-stage');
+  try {for(let i=0;i<values.length;i++){const op=`op${i}`;await commitChange(source,{operationId:op,storeId:'s',deviceId:'d',deviceEpoch:1,localSequence:i+1,kind:'test',targetId:op,actorId:'a',policyVersion:1,payload:{},state:[{key:op,expectedRevision:null,value:values[i]}],ledger:[{id:`l${i}`,operationId:op,value:1}],audit:[{id:`a${i}`,operationId:op,value:1}],outbox:{id:`o${i}`,operationId:op,value:1},result:'ok'});}
+   const original=await checkpoint(source);await stageSnapshot(stage,original);source.close();stage.close();const reopened=new BerrieDatabase(name+'-stage');try{return {original,restored:await checkpoint(reopened),values};}finally{reopened.close();}
+  }finally{await source.delete();await stage.delete();}
+ });expect(result.restored).toEqual(result.original);expect(result.restored.state.map(row=>row.value)).toEqual(result.values);expect(result.values[0].settlement.totals.total).toBe(33350);
+});
