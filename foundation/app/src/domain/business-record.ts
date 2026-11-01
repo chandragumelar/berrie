@@ -1,10 +1,13 @@
+import { validateStockGroup, type StockGroup } from './stock-group';
 import { validateDraft, type OrderDraft } from './draft';
 import { validateRefundHistory, validateSettlementSnapshot, type RefundRecord, type SettlementSnapshot } from './settlement';
 
 export const SETTLEMENT_RECORD = 'settlement' as const;
 export const REFUND_HISTORY_RECORD = 'refund-history' as const;
 export const DRAFT_RECORD = 'draft' as const;
+export const STOCK_GROUP_RECORD = 'stock-group' as const;
 export type BusinessRecord =
+ | { recordType: typeof STOCK_GROUP_RECORD; schemaVersion: 1; stockGroup: StockGroup }
  | { recordType: typeof DRAFT_RECORD; schemaVersion: 1; draft: OrderDraft }
  | { recordType: typeof SETTLEMENT_RECORD; schemaVersion: 1; settlement: SettlementSnapshot }
  | { recordType: typeof REFUND_HISTORY_RECORD; schemaVersion: 1; settlement: SettlementSnapshot; refunds: RefundRecord[] };
@@ -15,7 +18,8 @@ export function validateBusinessRecord(value: unknown): void {
  if (Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) throw new Error('Record bisnis tidak sah');
  const record = value as Record<string, unknown>;
  if (record.schemaVersion !== 1) throw new Error('Versi record bisnis tidak didukung');
- if (record.recordType === DRAFT_RECORD) validateDraft(record.draft);
+ if (record.recordType === STOCK_GROUP_RECORD) validateStockGroup(record.stockGroup);
+ else if (record.recordType === DRAFT_RECORD) validateDraft(record.draft);
  else if (record.recordType === SETTLEMENT_RECORD) validateSettlementSnapshot(record.settlement);
  else if (record.recordType === REFUND_HISTORY_RECORD) validateRefundHistory(record.settlement, record.refunds);
  else throw new Error('Jenis record bisnis tidak dikenal');
@@ -32,4 +36,8 @@ export function createRefundHistoryRecord(settlement: unknown, refunds: unknown)
 
 export function createDraftRecord(draft:unknown): Extract<BusinessRecord, {recordType: typeof DRAFT_RECORD}> {
  validateDraft(draft); return {recordType:DRAFT_RECORD,schemaVersion:1,draft:structuredClone(draft)};
+}
+
+export function createStockGroupRecord(stockGroup:unknown): Extract<BusinessRecord, {recordType: typeof STOCK_GROUP_RECORD}> {
+ validateStockGroup(stockGroup); return {recordType:STOCK_GROUP_RECORD,schemaVersion:1,stockGroup:structuredClone(stockGroup)};
 }

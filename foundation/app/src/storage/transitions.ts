@@ -13,6 +13,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  const changes=receipts.map(r=>JSON.parse(r.payload) as AtomicChange);
  const byKey=new Map<string,{change:AtomicChange; revision:number; value:unknown}[]>();
  for(const change of changes) for(const row of change.state) {
+  if(change.kind.startsWith('stock.') && (!row.value || typeof row.value!=='object' || !('recordType' in row.value) || row.value.recordType!=='stock-group')) throw new Error('Record stok wajib bertipe');
   const versions=byKey.get(row.key) ?? [];
   versions.push({change,revision:(row.expectedRevision ?? -1)+1,value:row.value});byKey.set(row.key,versions);
  }
@@ -39,6 +40,25 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='stock-group') {
+    const g=current.stockGroup, change=v.change, prev=previous?.recordType==='stock-group'?previous.stockGroup:null;
+    const action=v.revision===0?'opening':change.kind==='stock.correction'?'correction':change.kind==='stock.minimum'?'minimum':null;
+    const p=change.payload as {action?:unknown;data?:Record<string,unknown>;metadata?:Record<string,unknown>} | null;
+    const data=p?.data, meta=p?.metadata;
+    if(!action || change.kind!==`stock.${action}` || change.targetId!==g.groupId || key!==`stock-group:${g.groupId}` || g.storeId!==owner || change.state.length!==1 || change.audit.length!==1 || !data || !meta || p?.action!==action || data.groupId!==g.groupId || (v.revision>0 && !prev)) throw new Error('Operasi stok tidak sah');
+    for(const field of ['operationId','storeId','deviceId','deviceEpoch','localSequence','actorId','policyVersion'] as const) if(meta[field]!==change[field]) throw new Error('Metadata stok tidak sesuai');
+    if(typeof meta.recordedAt!=='string' || !Number.isFinite(Date.parse(meta.recordedAt)) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(meta.recordedAt)) throw new Error('Waktu stok tidak sah');
+    if(prev && (prev.storeId!==g.storeId || prev.groupId!==g.groupId || data.expectedRevision!==v.revision-1 || data.expectedBalance!==prev.balance)) throw new Error('Identitas atau versi stok berubah');
+    if(action==='opening' && (g.baseline!==g.balance || data.balance!==g.balance || g.minimum!==(data.minimum ?? 5))) throw new Error('Opening stok tidak sah');
+    if(action==='correction' && (!prev || typeof data.reason!=='string' || !data.reason.trim() || data.value!==g.balance || g.baseline!==g.balance || g.minimum!==prev.minimum)) throw new Error('Koreksi stok tidak sah');
+    if(action==='minimum' && (!prev || data.value!==g.minimum || g.balance!==prev.balance || g.baseline!==prev.baseline)) throw new Error('Minimal stok tidak sah');
+    const audit=change.audit[0].value as Record<string,unknown>;
+    if(!audit || typeof audit.recordedAt!=='string' || !Number.isFinite(Date.parse(audit.recordedAt)) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(audit.recordedAt)) throw new Error('Waktu audit stok tidak sah');
+    const expectedAudit={action,groupId:g.groupId,actorId:change.actorId,policyVersion:change.policyVersion,occurredAt:meta.recordedAt,recordedAt:audit.recordedAt,before:prev,after:g,reason:action==='correction'?data.reason:null};
+    const expectedLedger=action==='minimum'?[]:[{id:`stock-ledger:${change.operationId}`,operationId:change.operationId,value:{action,groupId:g.groupId,storeId:g.storeId,delta:g.balance-(prev?.balance ?? 0),before:prev?.balance ?? 0,after:g.balance}}];
+    if(canonical(change.audit)!==canonical([{id:`stock-audit:${change.operationId}`,operationId:change.operationId,value:expectedAudit}]) || canonical(change.ledger)!==canonical(expectedLedger) || canonical(change.outbox)!==canonical({id:`stock-outbox:${change.operationId}`,operationId:change.operationId,value:{groupId:g.groupId}}) || canonical(change.result)!==canonical({groupId:g.groupId,revision:v.revision,stockGroup:g})) throw new Error('Histori stok tidak sesuai');
+    previous=current; continue;
+   }
    if(current.recordType==='draft') {
     const d=current.draft, order=JSON.stringify([owner,d.orderId]);
     const change=v.change;
@@ -67,7 +87,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     previous=current; continue;
    }
    const identity=JSON.stringify([owner,current.settlement.orderId]);
-   if(previous && previous.recordType!=='draft' && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
+   if(previous && previous.recordType!=='draft' && previous.recordType!=='stock-group' && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
    if(current.recordType==='settlement') {
     const existing=settlements.get(identity);
     if(existing && existing.key!==key) throw new Error('Settlement duplikat');
@@ -85,7 +105,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const numbers of draftSequences.values()) for(let i=1;i<=numbers.size;i++) if(!numbers.has(i)) throw new Error('Urutan nomor draft tidak lengkap');
  for(const identity of draftOrders.keys()) if(settlements.has(identity) || refunds.has(identity)) throw new Error('Draft sudah memiliki settlement');
  for(const row of state) if(typed(row.value) && !byKey.has(row.key)) throw new Error('Record bisnis tanpa receipt');
- for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='draft' ? null : source.value.settlement)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
+ for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='draft' || source.value.recordType==='stock-group' ? null : source.value.settlement)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
  const indegree=new Map(changes.map(change=>[change.operationId,0]));
  for(const next of edges.values()) for(const id of next) indegree.set(id,(indegree.get(id) ?? 0)+1);
  const ready=[...indegree].filter(([,count])=>count===0).map(([id])=>id);let visited=0;
