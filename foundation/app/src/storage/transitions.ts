@@ -1,3 +1,4 @@
+import { draftDateCode } from '../domain/draft';
 import type { BusinessRecord } from '../domain/business-record';
 import type { AtomicChange } from './commit';
 import { canonical } from './commit';
@@ -17,6 +18,9 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  }
  const settlements=new Map<string,{key:string; value:BusinessRecord; operationId:string}>();
  const refunds=new Map<string,string>();
+ const draftSequences=new Map<string,Set<number>>();
+ const draftOrders=new Map<string,string>(), draftNumbers=new Map<string,string>(), platformIds=new Map<string,string>(), draftUnits=new Map<string,string>(), draftItems=new Map<string,string>();
+ const unique=(map:Map<string,string>,identity:string,order:string)=>{const prior=map.get(identity);if(prior && prior!==order) throw new Error('Identitas draft duplikat');map.set(identity,order);};
  const edges=new Map<string,Set<string>>();
  const edge=(from:string,to:string)=>{if(from===to)return;const next=edges.get(from) ?? new Set<string>();next.add(to);edges.set(from,next);};
  const streams=new Map<string,AtomicChange[]>();
@@ -27,6 +31,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const [key,versions] of byKey) {
   versions.sort((a,b)=>a.revision-b.revision);
   let previous:BusinessRecord|undefined;let owner:string|undefined;
+  const retiredUnits=new Set<string>(),retiredItems=new Set<string>();
   for(let i=0;i<versions.length;i++) {
    const v=versions[i];if(i) edge(versions[i-1].change.operationId,v.change.operationId);
    const current=typed(v.value);
@@ -34,8 +39,35 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='draft') {
+    const d=current.draft, order=JSON.stringify([owner,d.orderId]);
+    const change=v.change;
+    if(change.kind!==(v.revision===0?'draft.create':'draft.update') || change.targetId!==d.orderId || key!==`draft:${d.orderId}` || change.state.length!==1 || change.ledger.length!==0 || change.audit.length!==1) throw new Error('Operasi draft tidak sah');
+    const payload=change.payload;
+    if(!payload || typeof payload!=='object' || !('metadata' in payload) || !payload.metadata || typeof payload.metadata!=='object' || !('recordedAt' in payload.metadata) || !('storeTimeZone' in payload.metadata) || typeof payload.metadata.recordedAt!=='string' || typeof payload.metadata.storeTimeZone!=='string') throw new Error('Metadata draft tidak sah');
+    draftDateCode(payload.metadata.recordedAt,payload.metadata.storeTimeZone);
+    const audit={action:v.revision===0?'create':'update',orderId:d.orderId,actorId:change.actorId,policyVersion:change.policyVersion,occurredAt:payload.metadata.recordedAt,recordedAt:d.savedAt,before:previous?.recordType==='draft'?previous.draft:null,after:d};
+    if(canonical(change.audit[0].value)!==canonical(audit)) throw new Error('Audit draft tidak sesuai');
+    if(v.revision===0) {
+     const prefix=`${draftDateCode(d.savedAt,payload.metadata.storeTimeZone)}-E${change.deviceEpoch}-`;
+     if(!d.displayNumber.startsWith(prefix)) throw new Error('Nomor draft tidak sesuai waktu atau epoch');
+     const digits=d.displayNumber.slice(prefix.length),number=Number(digits);
+     if(!Number.isSafeInteger(number) || number<1 || digits!==String(number).padStart(4,'0')) throw new Error('Nomor draft tidak sah');
+     const group=JSON.stringify([owner,prefix]),numbers=draftSequences.get(group) ?? new Set<number>();numbers.add(number);draftSequences.set(group,numbers);
+    }
+    unique(draftOrders,order,key);
+    unique(draftNumbers,JSON.stringify([owner,d.displayNumber]),order);
+    if(d.channel!=='store') unique(platformIds,JSON.stringify([owner,d.channel,d.channelAccountId,d.externalOrderId]),order);
+    const currentUnits=new Set(d.items.flatMap(item=>item.unitIds)), currentItems=new Set(d.items.map(item=>item.id));
+    for(const item of d.items) {unique(draftItems,JSON.stringify([owner,item.id]),order);if(retiredItems.has(item.id)) throw new Error('ID item yang dihapus digunakan kembali');for(const id of item.unitIds) {unique(draftUnits,JSON.stringify([owner,id]),order);if(retiredUnits.has(id)) throw new Error('ID unit yang dihapus digunakan kembali');}}
+    if(previous?.recordType==='draft') for(const item of previous.draft.items) {if(!currentItems.has(item.id)) retiredItems.add(item.id);for(const id of item.unitIds) if(!currentUnits.has(id)) retiredUnits.add(id);}
+
+    if(previous && previous.recordType==='draft' && (current.draft.orderId!==previous.draft.orderId || current.draft.displayNumber!==previous.draft.displayNumber || current.draft.cashSessionId!==previous.draft.cashSessionId)) throw new Error('Identitas draft berubah');
+    if(i>0 && !previous) throw new Error('Record generik bukan draft');
+    previous=current; continue;
+   }
    const identity=JSON.stringify([owner,current.settlement.orderId]);
-   if(previous && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
+   if(previous && previous.recordType!=='draft' && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
    if(current.recordType==='settlement') {
     const existing=settlements.get(identity);
     if(existing && existing.key!==key) throw new Error('Settlement duplikat');
@@ -50,8 +82,10 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   const last=versions[versions.length-1],actual=stateByKey.get(key);
   if(!actual || actual.revision!==last.revision || canonical(actual.value)!==canonical(last.value)) throw new Error('State tidak sesuai histori');
  }
+ for(const numbers of draftSequences.values()) for(let i=1;i<=numbers.size;i++) if(!numbers.has(i)) throw new Error('Urutan nomor draft tidak lengkap');
+ for(const identity of draftOrders.keys()) if(settlements.has(identity) || refunds.has(identity)) throw new Error('Draft sudah memiliki settlement');
  for(const row of state) if(typed(row.value) && !byKey.has(row.key)) throw new Error('Record bisnis tanpa receipt');
- for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.settlement)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
+ for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='draft' ? null : source.value.settlement)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
  const indegree=new Map(changes.map(change=>[change.operationId,0]));
  for(const next of edges.values()) for(const id of next) indegree.set(id,(indegree.get(id) ?? 0)+1);
  const ready=[...indegree].filter(([,count])=>count===0).map(([id])=>id);let visited=0;
