@@ -2,6 +2,7 @@ import { draftDateCode } from '../domain/draft';
 import { createDraftRecord, validateBusinessRecord, type BusinessRecord } from '../domain/business-record';
 import { BerrieDatabase } from './database';
 import { canonical, copyInput, withWriterTransaction, type AtomicChange, type LockProvider } from './commit';
+import { requireOrderSession } from './order-session';
 
 export interface DraftMetadata { operationId:string; storeId:string; deviceId:string; deviceEpoch:number; localSequence:number; actorId:string; policyVersion:number; recordedAt:string; storeTimeZone:string }
 export interface DraftResult { orderId:string; displayNumber:string; revision:number }
@@ -23,12 +24,14 @@ function save(db:BerrieDatabase, input:unknown, metadata:DraftMetadata, expected
  const normalized={...fields,externalOrderId:typeof fields.externalOrderId==='string'?fields.externalOrderId.trim():fields.externalOrderId};
  // Validate before acquiring the lock; create's number is allocated inside the transaction.
  const candidate=createDraftRecord({...normalized,displayNumber:expectedRevision===null?`000101-E${meta.deviceEpoch}-0001`:fields.displayNumber,savedAt:meta.recordedAt});
+ candidate.schemaVersion=2;
  const intent={data,metadata:meta,expectedRevision};canonical(intent);
  return withWriterTransaction(db,locks,async commit=>{
   const existing=await db.receipts.get(meta.operationId);
   if(existing) {
    const change=JSON.parse(existing.payload) as AtomicChange;
-   if((change.kind!=='draft.create' && change.kind!=='draft.update') || canonical(change.payload)!==canonical(intent)) throw new Error('Konflik operation ID');
+   const payload=change.payload as typeof intent & {contractVersion?:number;sessionSource?:unknown};
+   if((change.kind!=='draft.create' && change.kind!=='draft.update') || canonical({data:payload.data,metadata:payload.metadata,expectedRevision:payload.expectedRevision})!==canonical(intent)) throw new Error('Konflik operation ID');
    return existing.result;
   }
   const committedAt=now();const day=draftDateCode(committedAt,meta.storeTimeZone);candidate.draft.savedAt=committedAt;
@@ -36,6 +39,7 @@ function save(db:BerrieDatabase, input:unknown, metadata:DraftMetadata, expected
   if((row?.revision ?? null)!==expectedRevision) throw new Error('Revisi berubah');
   const previous=expectedRevision===null?null:record(row?.value);
   if(previous && (previous.draft.orderId!==candidate.draft.orderId || previous.draft.displayNumber!==candidate.draft.displayNumber || previous.draft.cashSessionId!==candidate.draft.cashSessionId)) throw new Error('Identitas draft berubah');
+  const sessionSource=await requireOrderSession(db,meta.storeId,previous?.draft.cashSessionId ?? candidate.draft.cashSessionId);
   if(expectedRevision===null) {
    const prefix=`${day}-E${meta.deviceEpoch}-`;let maximum=0;
    for(const receipt of await db.receipts.toArray()) {
@@ -53,7 +57,7 @@ function save(db:BerrieDatabase, input:unknown, metadata:DraftMetadata, expected
    candidate.draft.displayNumber=prefix+String(maximum+1).padStart(4,'0');
   }
   const operationId=meta.operationId;const result:DraftResult={orderId:candidate.draft.orderId,displayNumber:candidate.draft.displayNumber,revision:expectedRevision===null?0:expectedRevision+1};
-  const change:AtomicChange={operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:expectedRevision===null?'draft.create':'draft.update',targetId:candidate.draft.orderId,payload:intent,state:[{key:key(candidate.draft.orderId),expectedRevision,value:candidate}],ledger:[],audit:[{id:`draft-audit:${operationId}`,operationId,value:{action:expectedRevision===null?'create':'update',orderId:candidate.draft.orderId,actorId:meta.actorId,policyVersion:meta.policyVersion,occurredAt:meta.recordedAt,recordedAt:committedAt,before:previous?.draft ?? null,after:candidate.draft}}],outbox:{id:`draft-outbox:${operationId}`,operationId,value:{orderId:candidate.draft.orderId}},result};
+  const change:AtomicChange={operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:expectedRevision===null?'draft.create':'draft.update',targetId:candidate.draft.orderId,payload:{...intent,contractVersion:2,sessionSource},state:[{key:key(candidate.draft.orderId),expectedRevision,value:candidate}],ledger:[],audit:[{id:`draft-audit:${operationId}`,operationId,value:{action:expectedRevision===null?'create':'update',orderId:candidate.draft.orderId,actorId:meta.actorId,policyVersion:meta.policyVersion,occurredAt:meta.recordedAt,recordedAt:committedAt,before:previous?.draft ?? null,after:candidate.draft}}],outbox:{id:`draft-outbox:${operationId}`,operationId,value:{orderId:candidate.draft.orderId}},result};
   return commit(change);
  });
 }
