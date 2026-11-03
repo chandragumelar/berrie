@@ -10,7 +10,7 @@ export type CashMetadata=StockMetadata;
 export interface OpenCashInput { sessionId:string; number:string; initialCustodian:string; openingAmount:number; timeZone:string }
 export interface MoveCashInput { sessionId:string; expectedRevision:number; kind:'in'|'out'; amount:number; category:string; description:string }
 const key=(id:string)=>`cash-session:${id}`;
-function movements(changes:AtomicChange[],id:string):CashMovement[] { return changes.filter(c=>c.kind.startsWith('cash.') && c.targetId===id).sort((a,b)=>a.state[0].expectedRevision===null?-1:b.state[0].expectedRevision===null?1:a.state[0].expectedRevision-b.state[0].expectedRevision).map(c=>c.ledger[0].value as CashMovement); }
+export function cashMovements(changes:AtomicChange[],id:string):CashMovement[] { return changes.filter(c=>(c.kind.startsWith('cash.') && c.targetId===id) || (c.kind==='payment.confirmed-cash' && c.state.some(s=>s.key===key(id)))).sort((a,b)=>(a.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)-(b.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)).map(c=>c.ledger[0].value as CashMovement); }
 export function makeCashChange(session:CashSession, data:OpenCashInput|MoveCashInput, meta:CashMetadata, revision:number|null, before:number):AtomicChange {
  const opening=revision===null;
  const entry:CashMovement=opening?{kind:'opening',sessionId:session.id,storeId:session.storeId,amount:session.openingAmount,category:'',description:''}:{kind:(data as MoveCashInput).kind,sessionId:session.id,storeId:session.storeId,amount:(data as MoveCashInput).amount,category:(data as MoveCashInput).category,description:(data as MoveCashInput).description};
@@ -36,7 +36,7 @@ async function save(db:BerrieDatabase, input:OpenCashInput|MoveCashInput, metada
   } else {
    const d=data as MoveCashInput,record=row?.value as {recordType?:string;session?:CashSession};
    if(!row || record?.recordType!=='cash-session' || row.revision!==d.expectedRevision || !record.session || record.session.storeId!==meta.storeId || record.session.id!==d.sessionId) throw new Error('Sesi atau revisi tidak sesuai');
-   session=record.session;before=cashBalance(movements(changes,session.id),session);
+   session=record.session;before=cashBalance(cashMovements(changes,session.id),session);
   }
   return commit(makeCashChange(session,data,meta,row?.revision ?? null,before));
  });
@@ -47,5 +47,5 @@ export function moveCash(db:BerrieDatabase,data:MoveCashInput,meta:CashMetadata,
 export async function readCashBalance(db:BerrieDatabase,storeId:string,sessionId:string):Promise<number> {
  const snapshot=await checkpoint(db);validateCheckpoint(snapshot);const row=snapshot.state.find(r=>r.key===key(sessionId));const value=row?.value as {recordType?:string;session?:CashSession};
  if(value?.recordType!=='cash-session' || !value.session || value.session.storeId!==storeId || value.session.id!==sessionId) throw new Error('Sesi tidak ditemukan');
- return cashBalance(movements(snapshot.receipts.map(r=>JSON.parse(r.payload) as AtomicChange),sessionId),value.session);
+ return cashBalance(cashMovements(snapshot.receipts.map(r=>JSON.parse(r.payload) as AtomicChange),sessionId),value.session);
 }

@@ -1,3 +1,4 @@
+import { validateCashPayment, type CashPayment } from './payment';
 import { validateCashSession, type CashSession } from './cash-session';
 import { validateServingState, type ServingState } from './serving';
 import { validateStockGroup, type StockGroup } from './stock-group';
@@ -16,6 +17,8 @@ export function validateSkuStockMapping(value:unknown): asserts value is SkuStoc
  if(Object.keys(v).sort().join(',')!=='groupId,skuId,storeId' || ![v.storeId,v.skuId,v.groupId].every(x=>typeof x==='string' && !!x.trim() && x.length<=200)) throw new Error('Pemetaan tidak sah');
 }
 export type BusinessRecord =
+ | { recordType:'payment'; schemaVersion:1; payment:CashPayment }
+ | { recordType:'customer-job'; schemaVersion:1; payment:CashPayment; settlement:SettlementSnapshot; batch:FirstBatch }
  | { recordType:'serving'; schemaVersion:1; serving:ServingState }
  | { recordType:'cash-session'; schemaVersion:1; session:CashSession }
  | { recordType:'first-batch'; schemaVersion:1|2; batch:FirstBatch }
@@ -32,7 +35,9 @@ export function validateBusinessRecord(value: unknown): void {
  if (Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) throw new Error('Record bisnis tidak sah');
  const record = value as Record<string, unknown>;
  if (record.schemaVersion !== 1 && !(record.schemaVersion===2 && ['draft','first-batch','kitchen-job'].includes(record.recordType as string))) throw new Error('Versi record bisnis tidak didukung');
- if (record.recordType === 'serving') { if(Object.keys(record).sort().join(',')!=='recordType,schemaVersion,serving') throw new Error('Record penyajian tidak sah'); validateServingState(record.serving); }
+ if (record.recordType === 'payment') { if(Object.keys(record).sort().join(',')!=='payment,recordType,schemaVersion') throw new Error('Record payment tidak sah'); validateCashPayment(record.payment); }
+ else if (record.recordType === 'customer-job') { if(Object.keys(record).sort().join(',')!=='batch,payment,recordType,schemaVersion,settlement') throw new Error('Job pelanggan tidak sah'); validateCashPayment(record.payment); validateSettlementSnapshot(record.settlement); validateFirstBatch(record.batch); }
+ else if (record.recordType === 'serving') { if(Object.keys(record).sort().join(',')!=='recordType,schemaVersion,serving') throw new Error('Record penyajian tidak sah'); validateServingState(record.serving); }
  else if (record.recordType === 'cash-session') { if(Object.keys(record).sort().join(',')!=='recordType,schemaVersion,session') throw new Error('Record kas tidak sah'); validateCashSession(record.session); }
  else if (record.recordType === 'first-batch' || record.recordType === 'kitchen-job') {
   if (Object.keys(record).sort().join(',') !== 'batch,recordType,schemaVersion') throw new Error('Record batch tidak sah');
