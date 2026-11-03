@@ -5,6 +5,12 @@ import { BerrieDatabase } from './database';
 import { mappingKey, mappingRecord } from './sku-stock-mappings';
 import type { StockMetadata } from './stock-groups';
 import { requireOrderSession } from './order-session';
+import { checkpoint } from './recovery';
+import { validateCheckpoint } from './validate-checkpoint';
+import { cashMovements } from './cash-sessions';
+import { cashBalance } from '../domain/cash-session';
+import { makeConfirmedCashPaymentChange } from './confirmed-cash-payment';
+import { batchIntent, combineDraftCashChange, type DraftCashInput } from './draft-cash-contract';
 
 export interface ConfirmFirstBatchInput {
  orderId:string;
@@ -14,18 +20,23 @@ export interface ConfirmFirstBatchInput {
 }
 
 /** Internal only. Identity and policy metadata do not authorize this operation. */
-export function confirmFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput, metadata:StockMetadata, locks:LockProvider=navigator.locks, now:()=>string=()=>new Date().toISOString()):Promise<unknown> {
- const data=copyInput(input) as ConfirmFirstBatchInput, meta=copyInput(metadata) as StockMetadata;
+function saveFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput | DraftCashInput, metadata:StockMetadata, cash:boolean, locks:LockProvider=navigator.locks, now:()=>string=()=>new Date().toISOString()):Promise<unknown> {
+ const data=copyInput(input) as DraftCashInput, meta=copyInput(metadata) as StockMetadata;
  const intent={data,metadata:meta};canonical(intent);
  if(!data || typeof data.orderId!=='string' || !data.orderId.trim() || !Number.isSafeInteger(data.expectedDraftRevision) || data.expectedDraftRevision<0 || !Array.isArray(data.mappings) || !Array.isArray(data.groups)) throw new Error('Intent batch tidak sah');
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
-  if(prior) {const change=JSON.parse(prior.payload) as AtomicChange;const payload=change.payload as typeof intent;if(change.kind!=='batch.confirm-first' || canonical({data:payload.data,metadata:payload.metadata})!==canonical(intent)) throw new Error('Konflik operation ID');return prior.result;}
+  if(prior) {const change=JSON.parse(prior.payload) as AtomicChange;const payload=change.payload as typeof intent;if(change.kind!==(cash?'payment.draft-cash':'batch.confirm-first') || canonical({data:payload.data,metadata:payload.metadata})!==canonical(intent)) throw new Error('Konflik operation ID');return prior.result;}
+  if(cash) {
+   if(Object.keys(data).sort().join(',')!=='expectedDraftRevision,expectedSessionRevision,groups,mappings,orderId,received') throw new Error('Intent pembayaran tidak sah');
+   validateCheckpoint(await checkpoint(db));
+  }
   if(await db.state.get(`first-batch:${data.orderId}`)) throw new Error('Draft sudah dikonfirmasi');
   const row=await db.state.get(`draft:${data.orderId}`);validateBusinessRecord(row?.value);
   if(!row || row.revision!==data.expectedDraftRevision || !row.value || typeof row.value!=='object' || !('recordType' in row.value) || row.value.recordType!=='draft') throw new Error('Draft atau revisi tidak sesuai');
   const draft=(row.value as Extract<BusinessRecord,{recordType:'draft'}>).draft;
   const sessionSource=await requireOrderSession(db,meta.storeId,draft.cashSessionId);
+  if(cash && sessionSource.revision!==data.expectedSessionRevision) throw new Error('Revisi sesi berubah');
   const history=(await db.receipts.toArray()).map(r=>JSON.parse(r.payload) as AtomicChange).filter(c=>c.state.some(s=>s.key===`draft:${data.orderId}`));
   if(draft.orderId!==data.orderId || !history.length || history.some(c=>c.storeId!==meta.storeId) || !history.some(c=>c.state.some(s=>s.key===`draft:${data.orderId}` && (s.expectedRevision ?? -1)+1===row.revision && canonical(s.value)===canonical(row.value)))) throw new Error('Histori atau toko draft berbeda');
   const skus=[...new Set(draft.items.map(item=>item.skuId))].sort();
@@ -56,6 +67,18 @@ export function confirmFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInpu
    state:[{key:`first-batch:${data.orderId}`,expectedRevision:null,value:{recordType:'first-batch',schemaVersion:2,batch}},{key:`kitchen-job:${data.orderId}`,expectedRevision:null,value:{recordType:'kitchen-job',schemaVersion:2,batch}},...groups.map(({row,stock})=>({key:row.key,expectedRevision:row.revision,value:{recordType:'stock-group',schemaVersion:1,stockGroup:{...stock,balance:plan.debits.find(d=>d.groupId===stock.groupId)!.after}}}))],
    ledger:plan.debits.map(debit=>({id:`batch-debit:${operationId}:${debit.groupId}`,operationId,value:{storeId:meta.storeId,orderId:data.orderId,...debit}})),
    audit:[{id:`batch-audit:${operationId}`,operationId,value:{batch,actorId:meta.actorId,policyVersion:meta.policyVersion}}],outbox:{id:`batch-outbox:${operationId}`,operationId,value:{orderId:data.orderId}},result:{orderId:data.orderId,batchNumber:1}};
-  return commit(change);
+  if(!cash) return commit(change);
+  const sessionRow=await db.state.get(`cash-session:${draft.cashSessionId}`);
+  const sessionRecord=sessionRow?.value as Extract<BusinessRecord,{recordType:'cash-session'}>;
+  const before=cashBalance(cashMovements((await db.receipts.toArray()).map(r=>JSON.parse(r.payload) as AtomicChange),draft.cashSessionId),sessionRecord.session);
+  const payment=makeConfirmedCashPaymentChange(batch,sessionRecord.session,{orderId:data.orderId,expectedBatchRevision:0,expectedSessionRevision:data.expectedSessionRevision,received:data.received},meta,before);
+  const batchData=batchIntent(data);
+  change.payload={...intent,data:batchData,contractVersion:2,sessionSource};
+  return commit(combineDraftCashChange(change,payment,data));
  });
 }
+
+/** Internal only; authorization is required before invoking this command. */
+export function confirmFirstBatch(db:BerrieDatabase,input:ConfirmFirstBatchInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> { return saveFirstBatch(db,input,metadata,false,locks,now); }
+/** Confirms the entire stored draft and settles positive cash in one transaction. */
+export function payDraftCash(db:BerrieDatabase,input:DraftCashInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> { return saveFirstBatch(db,input,metadata,true,locks,now); }
