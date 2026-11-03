@@ -1,3 +1,4 @@
+import { makeConfirmedCashPaymentChange, type ConfirmedCashPaymentInput } from './confirmed-cash-payment';
 import { cashBalance, type CashMovement } from '../domain/cash-session';
 import { makeCashChange, type CashMetadata, type MoveCashInput, type OpenCashInput } from './cash-sessions';
 import { draftDateCode } from '../domain/draft';
@@ -141,8 +142,24 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     if(canonical(change.audit)!==canonical([{id:`stock-audit:${change.operationId}`,operationId:change.operationId,value:expectedAudit}]) || canonical(change.ledger)!==canonical(expectedLedger) || canonical(change.outbox)!==canonical({id:`stock-outbox:${change.operationId}`,operationId:change.operationId,value:{groupId:g.groupId}}) || canonical(change.result)!==canonical({groupId:g.groupId,revision:v.revision,stockGroup:g})) throw new Error('Histori stok tidak sesuai');
     previous=current; continue;
    }
+   if(current.recordType==='payment' || current.recordType==='customer-job') {
+    const c=v.change, order=current.payment.orderId;
+    if(v.revision!==0 || c.kind!=='payment.confirmed-cash' || c.targetId!==order || key!==`${current.recordType}:${order}` || current.payment.storeId!==owner || !c.state.some(row=>row.key===`cash-session:${current.payment.cashSessionId}` && typed(row.value)?.recordType==='cash-session')) throw new Error('Histori pembayaran tidak sah');
+    previous=current;continue;
+   }
    if(current.recordType==='cash-session') {
-    const session=current.session, change=v.change, payload=change.payload as {data:OpenCashInput|MoveCashInput;metadata:CashMetadata};
+    const session=current.session, change=v.change;
+    if(change.kind==='payment.confirmed-cash') {
+     const payload=change.payload as {data:ConfirmedCashPaymentInput;metadata:StockMetadata;contractVersion:number};
+     const source=byKey.get(`first-batch:${change.targetId}`)?.find(x=>x.revision===payload?.data?.expectedBatchRevision), batch=typed(source?.value);
+     if(!payload || payload.contractVersion!==1 || !payload.data || !payload.metadata || !source || batch?.recordType!=='first-batch' || source.change.storeId!==owner || previous?.recordType!=='cash-session' || canonical(previous.session)!==canonical(session) || payload.data.expectedSessionRevision!==v.revision-1 || key!==`cash-session:${session.id}`) throw new Error('Sumber pembayaran tidak sah');
+     edge(source.change.operationId,change.operationId);
+     const before=cashBalance(cashEntries,session);
+     if(canonical(change)!==canonical(makeConfirmedCashPaymentChange(batch.batch,session,payload.data,payload.metadata,before))) throw new Error('Histori pembayaran tidak sesuai');
+     cashEntries.push(change.ledger[0].value as CashMovement);cashBalance(cashEntries,session);
+     previous=current;continue;
+    }
+    const payload=change.payload as {data:OpenCashInput|MoveCashInput;metadata:CashMetadata};
     const data=payload?.data, meta=payload?.metadata, opening=v.revision===0;
     if(!data || !meta || key!==`cash-session:${session.id}` || session.storeId!==owner || change.targetId!==session.id || change.kind!==(opening?'cash.open':'cash.move') || change.state.length!==1 || (opening ? Object.keys(data).sort().join(',')!=='initialCustodian,number,openingAmount,sessionId,timeZone' : Object.keys(data).sort().join(',')!=='amount,category,description,expectedRevision,kind,sessionId') || data.sessionId!==session.id) throw new Error('Operasi kas tidak sah');
     for(const field of ['operationId','storeId','deviceId','deviceEpoch','localSequence','actorId','policyVersion'] as const) if(meta[field]!==change[field]) throw new Error('Metadata kas tidak sesuai');
@@ -184,6 +201,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     previous=current; continue;
    }
    const identity=JSON.stringify([owner,current.settlement.orderId]);
+   if(current.recordType==='settlement' && v.change.kind==='payment.confirmed-cash' && (key!==`settlement:${current.settlement.orderId}` || v.revision!==0 || !v.change.state.some(row=>row.key.startsWith('cash-session:') && typed(row.value)?.recordType==='cash-session'))) throw new Error('Settlement pembayaran tidak sah');
    if(previous && (previous.recordType==='settlement' || previous.recordType==='refund-history') && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
    if(current.recordType==='settlement') {
     const existing=settlements.get(identity);
@@ -200,7 +218,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   if(!actual || actual.revision!==last.revision || canonical(actual.value)!==canonical(last.value)) throw new Error('State tidak sesuai histori');
  }
  for(const numbers of draftSequences.values()) for(let i=1;i<=numbers.size;i++) if(!numbers.has(i)) throw new Error('Urutan nomor draft tidak lengkap');
- for(const identity of draftOrders.keys()) if(settlements.has(identity) || refunds.has(identity)) throw new Error('Draft sudah memiliki settlement');
+ for(const identity of draftOrders.keys()) {const settlement=settlements.get(identity);if(refunds.has(identity) || (settlement && changes.find(c=>c.operationId===settlement.operationId)?.kind!=='payment.confirmed-cash')) throw new Error('Draft sudah memiliki settlement');}
  for(const row of state) if(typed(row.value) && !byKey.has(row.key)) throw new Error('Record bisnis tanpa receipt');
  for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='settlement' || source.value.recordType==='refund-history' ? source.value.settlement : null)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
  const indegree=new Map(changes.map(change=>[change.operationId,0]));

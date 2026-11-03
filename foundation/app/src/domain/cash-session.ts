@@ -1,7 +1,7 @@
 import { draftDateCode } from './draft';
 
 export interface CashSession { id:string; storeId:string; number:string; openedBy:string; initialCustodian:string; openedAt:string; timeZone:string; businessDate:string; openingAmount:number }
-export type CashMovement = { kind:'opening'|'in'|'out'; sessionId:string; storeId:string; amount:number; category:string; description:string };
+export type CashMovement = { kind:'opening'|'in'|'out'|'sale'; sessionId:string; storeId:string; amount:number; category:string; description:string };
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function text(v:unknown):v is string { return typeof v==='string' && !!v.trim() && v.length<=200; }
 export function businessDate(time:string, zone:string):string {
@@ -20,7 +20,7 @@ export function cashBalance(entries:CashMovement[], session:CashSession):number 
  if(!Array.isArray(entries) || !entries.length) throw new Error('Ledger kas kosong');
  let balance=0;
  entries.forEach((e,i)=>{
-  if(!e || typeof e!=='object' || Object.keys(e).sort().join(',')!=='amount,category,description,kind,sessionId,storeId' || e.sessionId!==session.id || e.storeId!==session.storeId || !Number.isSafeInteger(e.amount) || e.amount<0 || (i===0 ? e.kind!=='opening' || e.amount!==session.openingAmount || e.category!=='' || e.description!=='' : (e.kind!=='in' && e.kind!=='out') || e.amount===0 || !text(e.category) || !text(e.description))) throw new Error('Ledger kas tidak sah');
+  if(!e || typeof e!=='object' || Object.keys(e).sort().join(',')!=='amount,category,description,kind,sessionId,storeId' || e.sessionId!==session.id || e.storeId!==session.storeId || !Number.isSafeInteger(e.amount) || e.amount<0 || (i===0 ? e.kind!=='opening' || e.amount!==session.openingAmount || e.category!=='' || e.description!=='' : (e.kind!=='in' && e.kind!=='out' && e.kind!=='sale') || e.amount===0 || (e.kind==='sale' ? e.category!=='' || e.description!=='' : !text(e.category) || !text(e.description)))) throw new Error('Ledger kas tidak sah');
   balance+=e.kind==='out'?-e.amount:e.amount;
   if(!Number.isSafeInteger(balance) || balance<0) throw new Error('Saldo kas tidak sah');
  });
