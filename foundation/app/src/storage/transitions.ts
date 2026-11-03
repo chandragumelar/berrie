@@ -1,4 +1,5 @@
 import { draftDateCode } from '../domain/draft';
+import { planFirstBatch, snapshotBatchDraft, validateFirstBatch } from '../domain/first-batch';
 import type { BusinessRecord } from '../domain/business-record';
 import type { AtomicChange } from './commit';
 import { canonical } from './commit';
@@ -29,6 +30,40 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const change of changes) {const key=JSON.stringify([change.storeId,change.deviceId,change.deviceEpoch]);const stream=streams.get(key) ?? [];stream.push(change);streams.set(key,stream);}
  for(const stream of streams.values()) {stream.sort((a,b)=>a.localSequence-b.localSequence);for(let i=1;i<stream.length;i++)edge(stream[i-1].operationId,stream[i].operationId);}
  const stateByKey=new Map(state.map(row=>[row.key,row]));
+ for(const change of changes.filter(c=>c.kind==='batch.confirm-first')) {
+  const p=change.payload as {data?:{orderId:string;expectedDraftRevision:number;mappings:{skuId:string;groupId:string;revision:number}[];groups:{groupId:string;balance:number;revision:number}[]};metadata?:Record<string,unknown>};
+  const data=p?.data, meta=p?.metadata, batchRow=change.state.find(s=>s.key===`first-batch:${change.targetId}`), job=change.state.find(s=>s.key===`kitchen-job:${change.targetId}`);
+  const br=typed(batchRow?.value), jr=typed(job?.value);
+  if(!data || !meta || !br || br.recordType!=='first-batch' || !jr || jr.recordType!=='kitchen-job' || batchRow?.expectedRevision!==null || job?.expectedRevision!==null || data.orderId!==change.targetId || br.batch.storeId!==change.storeId || canonical(br.batch)!==canonical(jr.batch)) throw new Error('Batch atau job tidak sesuai');
+  for(const field of ['operationId','storeId','deviceId','deviceEpoch','localSequence','actorId','policyVersion'] as const) if(meta[field]!==change[field]) throw new Error('Metadata batch tidak sesuai');
+  validateFirstBatch(br.batch);
+  if(typeof meta.recordedAt!=='string' || !Number.isFinite(Date.parse(meta.recordedAt)) || br.batch.draft.orderId!==data.orderId || !Array.isArray(data.mappings) || !Array.isArray(data.groups)) throw new Error('Intent batch tidak sesuai');
+  draftDateCode(meta.recordedAt,'UTC');
+  const source=byKey.get(`draft:${data.orderId}`)?.find(v=>v.revision===data.expectedDraftRevision), current=stateByKey.get(`draft:${data.orderId}`);
+  const sourceRecord=typed(source?.value);
+  if(!source || source.change.storeId!==change.storeId || !sourceRecord || sourceRecord.recordType!=='draft' || !current || current.revision!==data.expectedDraftRevision || canonical(snapshotBatchDraft(sourceRecord.draft))!==canonical(br.batch.draft)) throw new Error('Sumber draft batch tidak sesuai');
+  edge(source.change.operationId,change.operationId);
+  if(data.mappings.length!==br.batch.skuGroups.length || new Set(data.mappings.map(m=>m.skuId)).size!==data.mappings.length) throw new Error('Pemetaan batch tidak sesuai');
+  for(const mapping of br.batch.skuGroups) {
+   const expected=data.mappings.find(m=>m.skuId===mapping.skuId), sourceMapping=byKey.get(`sku-stock-mapping:${JSON.stringify([change.storeId,mapping.skuId])}`)?.find(v=>v.revision===expected?.revision), record=typed(sourceMapping?.value);
+   if(!expected || expected.groupId!==mapping.groupId || expected.revision!==0 || !sourceMapping || !record || record.recordType!=='sku-stock-mapping' || canonical(record.mapping)!==canonical({...mapping,storeId:change.storeId})) throw new Error('Sumber pemetaan batch tidak sesuai');
+   edge(sourceMapping.change.operationId,change.operationId);
+  }
+  const groupIds=[...new Set(br.batch.skuGroups.map(m=>m.groupId))].sort();
+  if(data.groups.length!==groupIds.length || new Set(data.groups.map(g=>g.groupId)).size!==groupIds.length || change.state.length!==groupIds.length+2) throw new Error('Grup batch tidak sesuai');
+  const before=groupIds.map(id=>{
+   const expected=data.groups.find(g=>g.groupId===id), next=change.state.find(s=>s.key===`stock-group:${id}`);
+   const sourceGroup=byKey.get(`stock-group:${id}`)?.find(v=>v.revision===expected?.revision), record=typed(sourceGroup?.value), after=typed(next?.value);
+   if(!expected || !next || next.expectedRevision!==expected.revision || !sourceGroup || !record || record.recordType!=='stock-group' || record.stockGroup.storeId!==change.storeId || record.stockGroup.balance!==expected.balance || !after || after.recordType!=='stock-group') throw new Error('Sumber stok batch tidak sesuai');
+   edge(sourceGroup.change.operationId,change.operationId);
+   return {expected,stock:record.stockGroup,after:after.stockGroup};
+  });
+  const plan=planFirstBatch(br.batch,before.map(x=>({groupId:x.stock.groupId,balance:x.stock.balance})));
+  if(!plan.ok) throw new Error('Stok batch tidak cukup');
+  for(const item of before) {const debit=plan.debits.find(d=>d.groupId===item.stock.groupId);if(!debit || canonical(item.after)!==canonical({...item.stock,balance:debit.after})) throw new Error('Saldo batch tidak sesuai');}
+  const operationId=change.operationId;
+  if(canonical(change.ledger)!==canonical(plan.debits.map(debit=>({id:`batch-debit:${operationId}:${debit.groupId}`,operationId,value:{storeId:change.storeId,orderId:data.orderId,...debit}}))) || canonical(change.audit)!==canonical([{id:`batch-audit:${operationId}`,operationId,value:{batch:br.batch,actorId:change.actorId,policyVersion:change.policyVersion}}]) || canonical(change.outbox)!==canonical({id:`batch-outbox:${operationId}`,operationId,value:{orderId:data.orderId}}) || canonical(change.result)!==canonical({orderId:data.orderId,batchNumber:1})) throw new Error('Efek batch tidak sesuai');
+ }
  const pending:{identity:string; record:Extract<BusinessRecord,{recordType:'refund-history'}>; operationId:string}[]=[];
  for(const [key,versions] of byKey) {
   versions.sort((a,b)=>a.revision-b.revision);
@@ -41,6 +76,10 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='first-batch' || current.recordType==='kitchen-job') {
+    if(v.revision!==0 || i!==0 || v.change.kind!=='batch.confirm-first' || key!==`${current.recordType}:${current.batch.draft.orderId}`) throw new Error('Histori batch tidak sah');
+    previous=current;continue;
+   }
    if(current.recordType==='sku-stock-mapping') {
     const m=current.mapping, c=v.change, p=c.payload as {data?:unknown;metadata?:Record<string,unknown>} | null;
     const target=stateByKey.get(`stock-group:${m.groupId}`), group=typed(target?.value);
@@ -54,6 +93,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    }
    if(current.recordType==='stock-group') {
     const g=current.stockGroup, change=v.change, prev=previous?.recordType==='stock-group'?previous.stockGroup:null;
+    if(change.kind==='batch.confirm-first') {if(!prev) throw new Error('Stok batch tanpa sumber');previous=current;continue;}
     const action=v.revision===0?'opening':change.kind==='stock.correction'?'correction':change.kind==='stock.minimum'?'minimum':null;
     const p=change.payload as {action?:unknown;data?:Record<string,unknown>;metadata?:Record<string,unknown>} | null;
     const data=p?.data, meta=p?.metadata;
@@ -99,7 +139,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     previous=current; continue;
    }
    const identity=JSON.stringify([owner,current.settlement.orderId]);
-   if(previous && previous.recordType!=='draft' && previous.recordType!=='stock-group' && previous.recordType!=='sku-stock-mapping' && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
+   if(previous && (previous.recordType==='settlement' || previous.recordType==='refund-history') && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
    if(current.recordType==='settlement') {
     const existing=settlements.get(identity);
     if(existing && existing.key!==key) throw new Error('Settlement duplikat');
@@ -117,7 +157,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const numbers of draftSequences.values()) for(let i=1;i<=numbers.size;i++) if(!numbers.has(i)) throw new Error('Urutan nomor draft tidak lengkap');
  for(const identity of draftOrders.keys()) if(settlements.has(identity) || refunds.has(identity)) throw new Error('Draft sudah memiliki settlement');
  for(const row of state) if(typed(row.value) && !byKey.has(row.key)) throw new Error('Record bisnis tanpa receipt');
- for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='draft' || source.value.recordType==='stock-group' || source.value.recordType==='sku-stock-mapping' ? null : source.value.settlement)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
+ for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='settlement' || source.value.recordType==='refund-history' ? source.value.settlement : null)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
  const indegree=new Map(changes.map(change=>[change.operationId,0]));
  for(const next of edges.values()) for(const id of next) indegree.set(id,(indegree.get(id) ?? 0)+1);
  const ready=[...indegree].filter(([,count])=>count===0).map(([id])=>id);let visited=0;
