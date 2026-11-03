@@ -1,3 +1,5 @@
+import { cashBalance, type CashMovement } from '../domain/cash-session';
+import { makeCashChange, type CashMetadata, type MoveCashInput, type OpenCashInput } from './cash-sessions';
 import { draftDateCode } from '../domain/draft';
 import { planFirstBatch, snapshotBatchDraft, validateFirstBatch } from '../domain/first-batch';
 import type { BusinessRecord } from '../domain/business-record';
@@ -14,11 +16,13 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  const changes=receipts.map(r=>JSON.parse(r.payload) as AtomicChange);
  const byKey=new Map<string,{change:AtomicChange; revision:number; value:unknown}[]>();
  for(const change of changes) for(const row of change.state) {
+  if(change.kind.startsWith('cash.') && (!row.value || typeof row.value!=='object' || !('recordType' in row.value) || row.value.recordType!=='cash-session')) throw new Error('Record kas wajib bertipe');
   if(change.kind==='mapping.create' && (!row.value || typeof row.value!=='object' || !('recordType' in row.value) || row.value.recordType!=='sku-stock-mapping')) throw new Error('Record pemetaan wajib bertipe');
   if(change.kind.startsWith('stock.') && (!row.value || typeof row.value!=='object' || !('recordType' in row.value) || row.value.recordType!=='stock-group')) throw new Error('Record stok wajib bertipe');
   const versions=byKey.get(row.key) ?? [];
   versions.push({change,revision:(row.expectedRevision ?? -1)+1,value:row.value});byKey.set(row.key,versions);
  }
+ const cashStores=new Set<string>();
  const settlements=new Map<string,{key:string; value:BusinessRecord; operationId:string}>();
  const refunds=new Map<string,string>();
  const draftSequences=new Map<string,Set<number>>();
@@ -68,6 +72,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const [key,versions] of byKey) {
   versions.sort((a,b)=>a.revision-b.revision);
   let previous:BusinessRecord|undefined;let owner:string|undefined;
+  const cashEntries:CashMovement[]=[];
   const retiredUnits=new Set<string>(),retiredItems=new Set<string>();
   for(let i=0;i<versions.length;i++) {
    const v=versions[i];if(i) edge(versions[i-1].change.operationId,v.change.operationId);
@@ -110,6 +115,18 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     const expectedLedger=action==='minimum'?[]:[{id:`stock-ledger:${change.operationId}`,operationId:change.operationId,value:{action,groupId:g.groupId,storeId:g.storeId,delta:g.balance-(prev?.balance ?? 0),before:prev?.balance ?? 0,after:g.balance}}];
     if(canonical(change.audit)!==canonical([{id:`stock-audit:${change.operationId}`,operationId:change.operationId,value:expectedAudit}]) || canonical(change.ledger)!==canonical(expectedLedger) || canonical(change.outbox)!==canonical({id:`stock-outbox:${change.operationId}`,operationId:change.operationId,value:{groupId:g.groupId}}) || canonical(change.result)!==canonical({groupId:g.groupId,revision:v.revision,stockGroup:g})) throw new Error('Histori stok tidak sesuai');
     previous=current; continue;
+   }
+   if(current.recordType==='cash-session') {
+    const session=current.session, change=v.change, payload=change.payload as {data:OpenCashInput|MoveCashInput;metadata:CashMetadata};
+    const data=payload?.data, meta=payload?.metadata, opening=v.revision===0;
+    if(!data || !meta || key!==`cash-session:${session.id}` || session.storeId!==owner || change.targetId!==session.id || change.kind!==(opening?'cash.open':'cash.move') || change.state.length!==1 || (opening ? Object.keys(data).sort().join(',')!=='initialCustodian,number,openingAmount,sessionId,timeZone' : Object.keys(data).sort().join(',')!=='amount,category,description,expectedRevision,kind,sessionId') || data.sessionId!==session.id) throw new Error('Operasi kas tidak sah');
+    for(const field of ['operationId','storeId','deviceId','deviceEpoch','localSequence','actorId','policyVersion'] as const) if(meta[field]!==change[field]) throw new Error('Metadata kas tidak sesuai');
+    if(opening) {const d=data as OpenCashInput;if(cashStores.has(owner) || d.number!==session.number || d.initialCustodian!==session.initialCustodian || d.openingAmount!==session.openingAmount || d.timeZone!==session.timeZone || session.openedBy!==meta.actorId || session.openedAt!==meta.recordedAt) throw new Error('Pembukaan kas tidak sesuai');cashStores.add(owner);}
+    else if(previous?.recordType!=='cash-session' || canonical(previous.session)!==canonical(session) || (data as MoveCashInput).expectedRevision!==v.revision-1) throw new Error('Revisi sesi kas tidak sesuai');
+    const before=opening?0:cashBalance(cashEntries,session);
+    if(canonical(change)!==canonical(makeCashChange(session,data,meta,opening?null:v.revision-1,before))) throw new Error('Histori kas tidak sesuai');
+    cashEntries.push(change.ledger[0].value as CashMovement);cashBalance(cashEntries,session);
+    previous=current;continue;
    }
    if(current.recordType==='draft') {
     const d=current.draft, order=JSON.stringify([owner,d.orderId]);

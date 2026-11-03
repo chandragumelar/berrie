@@ -1,3 +1,4 @@
+import { validateCashSession, type CashSession } from './cash-session';
 import { validateStockGroup, type StockGroup } from './stock-group';
 import { validateFirstBatch, type FirstBatch } from './first-batch';
 import { validateDraft, type OrderDraft } from './draft';
@@ -14,6 +15,7 @@ export function validateSkuStockMapping(value:unknown): asserts value is SkuStoc
  if(Object.keys(v).sort().join(',')!=='groupId,skuId,storeId' || ![v.storeId,v.skuId,v.groupId].every(x=>typeof x==='string' && !!x.trim() && x.length<=200)) throw new Error('Pemetaan tidak sah');
 }
 export type BusinessRecord =
+ | { recordType:'cash-session'; schemaVersion:1; session:CashSession }
  | { recordType:'first-batch'; schemaVersion:1; batch:FirstBatch }
  | { recordType:'kitchen-job'; schemaVersion:1; batch:FirstBatch }
  | { recordType:'sku-stock-mapping'; schemaVersion:1; mapping:SkuStockMapping }
@@ -28,7 +30,8 @@ export function validateBusinessRecord(value: unknown): void {
  if (Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) throw new Error('Record bisnis tidak sah');
  const record = value as Record<string, unknown>;
  if (record.schemaVersion !== 1) throw new Error('Versi record bisnis tidak didukung');
- if (record.recordType === 'first-batch' || record.recordType === 'kitchen-job') {
+ if (record.recordType === 'cash-session') { if(Object.keys(record).sort().join(',')!=='recordType,schemaVersion,session') throw new Error('Record kas tidak sah'); validateCashSession(record.session); }
+ else if (record.recordType === 'first-batch' || record.recordType === 'kitchen-job') {
   if (Object.keys(record).sort().join(',') !== 'batch,recordType,schemaVersion') throw new Error('Record batch tidak sah');
   validateFirstBatch(record.batch);
  }
