@@ -1,4 +1,5 @@
 import { validateStockGroup, type StockGroup } from './stock-group';
+import { validateFirstBatch, type FirstBatch } from './first-batch';
 import { validateDraft, type OrderDraft } from './draft';
 import { validateRefundHistory, validateSettlementSnapshot, type RefundRecord, type SettlementSnapshot } from './settlement';
 
@@ -13,6 +14,8 @@ export function validateSkuStockMapping(value:unknown): asserts value is SkuStoc
  if(Object.keys(v).sort().join(',')!=='groupId,skuId,storeId' || ![v.storeId,v.skuId,v.groupId].every(x=>typeof x==='string' && !!x.trim() && x.length<=200)) throw new Error('Pemetaan tidak sah');
 }
 export type BusinessRecord =
+ | { recordType:'first-batch'; schemaVersion:1; batch:FirstBatch }
+ | { recordType:'kitchen-job'; schemaVersion:1; batch:FirstBatch }
  | { recordType:'sku-stock-mapping'; schemaVersion:1; mapping:SkuStockMapping }
  | { recordType: typeof STOCK_GROUP_RECORD; schemaVersion: 1; stockGroup: StockGroup }
  | { recordType: typeof DRAFT_RECORD; schemaVersion: 1; draft: OrderDraft }
@@ -25,7 +28,11 @@ export function validateBusinessRecord(value: unknown): void {
  if (Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) throw new Error('Record bisnis tidak sah');
  const record = value as Record<string, unknown>;
  if (record.schemaVersion !== 1) throw new Error('Versi record bisnis tidak didukung');
- if (record.recordType === 'sku-stock-mapping') validateSkuStockMapping(record.mapping);
+ if (record.recordType === 'first-batch' || record.recordType === 'kitchen-job') {
+  if (Object.keys(record).sort().join(',') !== 'batch,recordType,schemaVersion') throw new Error('Record batch tidak sah');
+  validateFirstBatch(record.batch);
+ }
+ else if (record.recordType === 'sku-stock-mapping') validateSkuStockMapping(record.mapping);
  else if (record.recordType === STOCK_GROUP_RECORD) validateStockGroup(record.stockGroup);
  else if (record.recordType === DRAFT_RECORD) validateDraft(record.draft);
  else if (record.recordType === SETTLEMENT_RECORD) validateSettlementSnapshot(record.settlement);

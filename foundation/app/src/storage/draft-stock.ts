@@ -7,6 +7,7 @@ import { canonical, type AtomicChange } from './commit';
 export async function planStoredDraftStock(db:BerrieDatabase,storeId:string,orderId:string) {
  if(![storeId,orderId].every(x=>typeof x==='string' && !!x.trim() && x.length<=200)) throw new Error('Identitas tidak sah');
  return db.transaction('r',[db.state,db.receipts],async()=>{
+  if(await db.state.get(`first-batch:${orderId}`)) throw new Error('Draft sudah dikonfirmasi');
   const row=await db.state.get(`draft:${orderId}`);validateBusinessRecord(row?.value);
   if(!row?.value || typeof row.value!=='object' || !('recordType' in row.value) || row.value.recordType!=='draft') throw new Error('Draft tidak ditemukan');
   if(!Number.isSafeInteger(row.revision) || row.revision<0) throw new Error('Revisi draft tidak sah');
