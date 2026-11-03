@@ -1,4 +1,5 @@
 import { validateCashSession, type CashSession } from './cash-session';
+import { validateServingState, type ServingState } from './serving';
 import { validateStockGroup, type StockGroup } from './stock-group';
 import { validateFirstBatch, type FirstBatch } from './first-batch';
 import { validateDraft, type OrderDraft } from './draft';
@@ -15,12 +16,13 @@ export function validateSkuStockMapping(value:unknown): asserts value is SkuStoc
  if(Object.keys(v).sort().join(',')!=='groupId,skuId,storeId' || ![v.storeId,v.skuId,v.groupId].every(x=>typeof x==='string' && !!x.trim() && x.length<=200)) throw new Error('Pemetaan tidak sah');
 }
 export type BusinessRecord =
+ | { recordType:'serving'; schemaVersion:1; serving:ServingState }
  | { recordType:'cash-session'; schemaVersion:1; session:CashSession }
- | { recordType:'first-batch'; schemaVersion:1; batch:FirstBatch }
- | { recordType:'kitchen-job'; schemaVersion:1; batch:FirstBatch }
+ | { recordType:'first-batch'; schemaVersion:1|2; batch:FirstBatch }
+ | { recordType:'kitchen-job'; schemaVersion:1|2; batch:FirstBatch }
  | { recordType:'sku-stock-mapping'; schemaVersion:1; mapping:SkuStockMapping }
  | { recordType: typeof STOCK_GROUP_RECORD; schemaVersion: 1; stockGroup: StockGroup }
- | { recordType: typeof DRAFT_RECORD; schemaVersion: 1; draft: OrderDraft }
+ | { recordType: typeof DRAFT_RECORD; schemaVersion: 1|2; draft: OrderDraft }
  | { recordType: typeof SETTLEMENT_RECORD; schemaVersion: 1; settlement: SettlementSnapshot }
  | { recordType: typeof REFUND_HISTORY_RECORD; schemaVersion: 1; settlement: SettlementSnapshot; refunds: RefundRecord[] };
 
@@ -29,8 +31,9 @@ export function validateBusinessRecord(value: unknown): void {
  if (value === null || typeof value !== 'object' || !Object.hasOwn(value, 'recordType')) return;
  if (Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) throw new Error('Record bisnis tidak sah');
  const record = value as Record<string, unknown>;
- if (record.schemaVersion !== 1) throw new Error('Versi record bisnis tidak didukung');
- if (record.recordType === 'cash-session') { if(Object.keys(record).sort().join(',')!=='recordType,schemaVersion,session') throw new Error('Record kas tidak sah'); validateCashSession(record.session); }
+ if (record.schemaVersion !== 1 && !(record.schemaVersion===2 && ['draft','first-batch','kitchen-job'].includes(record.recordType as string))) throw new Error('Versi record bisnis tidak didukung');
+ if (record.recordType === 'serving') { if(Object.keys(record).sort().join(',')!=='recordType,schemaVersion,serving') throw new Error('Record penyajian tidak sah'); validateServingState(record.serving); }
+ else if (record.recordType === 'cash-session') { if(Object.keys(record).sort().join(',')!=='recordType,schemaVersion,session') throw new Error('Record kas tidak sah'); validateCashSession(record.session); }
  else if (record.recordType === 'first-batch' || record.recordType === 'kitchen-job') {
   if (Object.keys(record).sort().join(',') !== 'batch,recordType,schemaVersion') throw new Error('Record batch tidak sah');
   validateFirstBatch(record.batch);

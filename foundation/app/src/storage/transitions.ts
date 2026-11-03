@@ -6,6 +6,8 @@ import type { BusinessRecord } from '../domain/business-record';
 import type { AtomicChange } from './commit';
 import { canonical } from './commit';
 import type { OperationRow, RecordRow } from './database';
+import { makeServingChange, type ServingAction, type ServingInput, type SessionSource } from './serving';
+import type { StockMetadata } from './stock-groups';
 
 function typed(value:unknown):BusinessRecord | undefined {
  if(value && typeof value==='object' && Object.hasOwn(value,'recordType')) return value as BusinessRecord;
@@ -34,13 +36,26 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const change of changes) {const key=JSON.stringify([change.storeId,change.deviceId,change.deviceEpoch]);const stream=streams.get(key) ?? [];stream.push(change);streams.set(key,stream);}
  for(const stream of streams.values()) {stream.sort((a,b)=>a.localSequence-b.localSequence);for(let i=1;i<stream.length;i++)edge(stream[i-1].operationId,stream[i].operationId);}
  const stateByKey=new Map(state.map(row=>[row.key,row]));
+ const sessionSource=(change:AtomicChange,sessionId:string,version=2)=>{
+  const payload=change.payload as {contractVersion?:unknown;sessionSource?:{id?:unknown;revision?:unknown}};
+  if(payload?.contractVersion===undefined && version===2) return; // Historic contract did not bind a session.
+  const ref=payload.sessionSource;
+  if(payload.contractVersion!==version || !ref || ref.id!==sessionId || !Number.isSafeInteger(ref.revision) || (ref.revision as number)<0) throw new Error('Referensi sesi tidak sah');
+  const source=byKey.get(`cash-session:${sessionId}`)?.find(v=>v.revision===ref.revision), record=typed(source?.value);
+  if(!source || source.change.storeId!==change.storeId || record?.recordType!=='cash-session' || record.session.id!==sessionId || record.session.storeId!==change.storeId) throw new Error('Sumber sesi tidak sesuai');
+  edge(source.change.operationId,change.operationId);
+  const next=byKey.get(`cash-session:${sessionId}`)?.find(v=>v.revision===(ref.revision as number)+1);
+  if(next) edge(change.operationId,next.change.operationId);
+ };
  for(const change of changes.filter(c=>c.kind==='batch.confirm-first')) {
   const p=change.payload as {data?:{orderId:string;expectedDraftRevision:number;mappings:{skuId:string;groupId:string;revision:number}[];groups:{groupId:string;balance:number;revision:number}[]};metadata?:Record<string,unknown>};
   const data=p?.data, meta=p?.metadata, batchRow=change.state.find(s=>s.key===`first-batch:${change.targetId}`), job=change.state.find(s=>s.key===`kitchen-job:${change.targetId}`);
   const br=typed(batchRow?.value), jr=typed(job?.value);
   if(!data || !meta || !br || br.recordType!=='first-batch' || !jr || jr.recordType!=='kitchen-job' || batchRow?.expectedRevision!==null || job?.expectedRevision!==null || data.orderId!==change.targetId || br.batch.storeId!==change.storeId || canonical(br.batch)!==canonical(jr.batch)) throw new Error('Batch atau job tidak sesuai');
+  if(br.schemaVersion!==jr.schemaVersion || (br.schemaVersion===2)!==((change.payload as {contractVersion?:unknown}).contractVersion===2)) throw new Error('Versi kontrak batch tidak sesuai');
   for(const field of ['operationId','storeId','deviceId','deviceEpoch','localSequence','actorId','policyVersion'] as const) if(meta[field]!==change[field]) throw new Error('Metadata batch tidak sesuai');
   validateFirstBatch(br.batch);
+  sessionSource(change,br.batch.draft.cashSessionId);
   if(typeof meta.recordedAt!=='string' || !Number.isFinite(Date.parse(meta.recordedAt)) || br.batch.draft.orderId!==data.orderId || !Array.isArray(data.mappings) || !Array.isArray(data.groups)) throw new Error('Intent batch tidak sesuai');
   draftDateCode(meta.recordedAt,'UTC');
   const source=byKey.get(`draft:${data.orderId}`)?.find(v=>v.revision===data.expectedDraftRevision), current=stateByKey.get(`draft:${data.orderId}`);
@@ -81,6 +96,16 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='serving') {
+    const c=v.change,p=c.payload as {data:ServingInput;metadata:StockMetadata;contractVersion:number;sessionSource:SessionSource},action=c.kind==='serving.serve'?'serve':c.kind==='serving.correct'?'correct':null;
+    const source=byKey.get(`first-batch:${current.serving.orderId}`)?.find(x=>x.revision===0),batch=typed(source?.value);
+    if(!action || !p?.data || !p.metadata || !source || batch?.recordType!=='first-batch' || source.change.storeId!==owner || key!==`serving:${current.serving.orderId}` || p.data.expectedRevision!==(v.revision===0?null:v.revision-1)) throw new Error('Histori penyajian tidak sah');
+    const before=previous?.recordType==='serving'?previous.serving:null;
+    if(v.revision>0 && !before) throw new Error('Sumber penyajian hilang');
+    sessionSource(c,batch.batch.draft.cashSessionId,1);edge(source.change.operationId,c.operationId);
+    if(canonical(c)!==canonical(makeServingChange(batch.batch,before,p.data,p.metadata,action as ServingAction,p.sessionSource))) throw new Error('Histori penyajian tidak sesuai');
+    previous=current;continue;
+   }
    if(current.recordType==='first-batch' || current.recordType==='kitchen-job') {
     if(v.revision!==0 || i!==0 || v.change.kind!=='batch.confirm-first' || key!==`${current.recordType}:${current.batch.draft.orderId}`) throw new Error('Histori batch tidak sah');
     previous=current;continue;
@@ -131,6 +156,9 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(current.recordType==='draft') {
     const d=current.draft, order=JSON.stringify([owner,d.orderId]);
     const change=v.change;
+    if((current.schemaVersion===2)!==((change.payload as {contractVersion?:unknown})?.contractVersion===2)) throw new Error('Versi kontrak draft tidak sesuai');
+    if(previous?.recordType==='draft' && previous.schemaVersion===2 && current.schemaVersion!==2) throw new Error('Versi kontrak draft mundur');
+    sessionSource(change,d.cashSessionId);
     if(change.kind!==(v.revision===0?'draft.create':'draft.update') || change.targetId!==d.orderId || key!==`draft:${d.orderId}` || change.state.length!==1 || change.ledger.length!==0 || change.audit.length!==1) throw new Error('Operasi draft tidak sah');
     const payload=change.payload;
     if(!payload || typeof payload!=='object' || !('metadata' in payload) || !payload.metadata || typeof payload.metadata!=='object' || !('recordedAt' in payload.metadata) || !('storeTimeZone' in payload.metadata) || typeof payload.metadata.recordedAt!=='string' || typeof payload.metadata.storeTimeZone!=='string') throw new Error('Metadata draft tidak sah');
