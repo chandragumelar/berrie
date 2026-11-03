@@ -10,7 +10,7 @@ export type CashMetadata=StockMetadata;
 export interface OpenCashInput { sessionId:string; number:string; initialCustodian:string; openingAmount:number; timeZone:string }
 export interface MoveCashInput { sessionId:string; expectedRevision:number; kind:'in'|'out'; amount:number; category:string; description:string }
 const key=(id:string)=>`cash-session:${id}`;
-export function cashMovements(changes:AtomicChange[],id:string):CashMovement[] { return changes.filter(c=>(c.kind.startsWith('cash.') && c.targetId===id) || (c.kind==='payment.confirmed-cash' && c.state.some(s=>s.key===key(id)))).sort((a,b)=>(a.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)-(b.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)).map(c=>c.ledger[0].value as CashMovement); }
+export function cashMovements(changes:AtomicChange[],id:string):CashMovement[] { return changes.filter(c=>(c.kind.startsWith('cash.') && c.targetId===id) || ((c.kind==='payment.confirmed-cash' || c.kind==='payment.draft-cash') && c.state.some(s=>s.key===key(id)))).sort((a,b)=>(a.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)-(b.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)).map(c=>c.ledger[0].value as CashMovement); }
 export function makeCashChange(session:CashSession, data:OpenCashInput|MoveCashInput, meta:CashMetadata, revision:number|null, before:number):AtomicChange {
  const opening=revision===null;
  const entry:CashMovement=opening?{kind:'opening',sessionId:session.id,storeId:session.storeId,amount:session.openingAmount,category:'',description:''}:{kind:(data as MoveCashInput).kind,sessionId:session.id,storeId:session.storeId,amount:(data as MoveCashInput).amount,category:(data as MoveCashInput).category,description:(data as MoveCashInput).description};
