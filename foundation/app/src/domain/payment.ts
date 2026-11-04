@@ -5,6 +5,16 @@ export interface CashPayment {
  id:string; orderId:string; storeId:string; cashSessionId:string; settlementId:string;
  paidAt:string; method:'cash'; amount:number; received:number; change:number;
 }
+export interface NoncashPayment {
+ id:string; orderId:string; storeId:string; cashSessionId:string; settlementId:string;
+ paidAt:string; method:'qris'|'transfer'|'ewallet'; amount:number; verified:true; note:string|null;
+}
+export function validateNoncashPayment(value:unknown):asserts value is NoncashPayment {
+ if(!value || typeof value!=='object' || Array.isArray(value) || Object.getPrototypeOf(value)!==Object.prototype) throw new Error('Pembayaran tidak sah');
+ const p=value as Record<string,unknown>;
+ if(Object.keys(p).sort().join(',')!=='amount,cashSessionId,id,method,note,orderId,paidAt,settlementId,storeId,verified' || ![p.id,p.orderId,p.storeId,p.cashSessionId,p.settlementId].every(v=>typeof v==='string' && !!v.trim() && v.length<=200) || !['qris','transfer','ewallet'].includes(p.method as string) || p.verified!==true || !(p.note===null || typeof p.note==='string' && p.note.length<=500) || typeof p.paidAt!=='string') throw new Error('Pembayaran tidak sah');
+ draftDateCode(p.paidAt,'UTC');integer(p.amount,1,Number.MAX_SAFE_INTEGER);
+}
 export function validateCashPayment(value:unknown): asserts value is CashPayment {
  if(!value || typeof value!=='object' || Array.isArray(value) || Object.getPrototypeOf(value)!==Object.prototype) throw new Error('Pembayaran tidak sah');
  const p=value as Record<string,unknown>;

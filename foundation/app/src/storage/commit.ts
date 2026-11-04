@@ -24,17 +24,23 @@ function positive(v:unknown, min=1):v is number { return typeof v==='number' && 
 /** Execute only within the writer lock and a transaction covering all six collections. */
 async function commitInTransaction(db:BerrieDatabase, change:AtomicChange):Promise<unknown> {
  if(![change.operationId,change.storeId,change.deviceId,change.kind,change.targetId,change.actorId].every(validId) || !positive(change.deviceEpoch) || !positive(change.localSequence) || !positive(change.policyVersion) || !Array.isArray(change.state) || !change.state.length || !Array.isArray(change.ledger) || !Array.isArray(change.audit) || !change.audit.length || !change.outbox || change.outbox.operationId!==change.operationId) throw new Error('Envelope operasi tidak sah');
- if(new Set(change.state.map(x=>x.key)).size!==change.state.length || change.state.some(x=>!(validId(x.key) || (typeof x.key==='string' && x.key.startsWith('sku-stock-mapping:') && x.key.length<=2500 && !!x.value && typeof x.value==='object' && 'recordType' in x.value && x.value.recordType==='sku-stock-mapping')) || (x.expectedRevision!==null && (!positive(x.expectedRevision,0) || x.expectedRevision===Number.MAX_SAFE_INTEGER)))) throw new Error('Revisi state tidak sah');
+ if(new Set(change.state.map(x=>x.key)).size!==change.state.length || change.state.some(x=>!(validId(x.key) || (typeof x.key==='string' && x.key.startsWith('payment-methods:') && x.key.length<=216 && !!x.value && typeof x.value==='object' && 'recordType' in x.value && x.value.recordType==='payment-methods') || (typeof x.key==='string' && x.key.startsWith('sku-stock-mapping:') && x.key.length<=2500 && !!x.value && typeof x.value==='object' && 'recordType' in x.value && x.value.recordType==='sku-stock-mapping')) || (x.expectedRevision!==null && (!positive(x.expectedRevision,0) || x.expectedRevision===Number.MAX_SAFE_INTEGER)))) throw new Error('Revisi state tidak sah');
  if([...change.ledger,...change.audit,change.outbox].some(x=>!validId(x.id) || x.operationId!==change.operationId)) throw new Error('Event operasi tidak sah');
  for(const row of change.state) validateBusinessRecord(row.value);
  const payload=canonical(change);
   const existing=await db.receipts.get(change.operationId);
   if(existing) { if(existing.payload!==payload) throw new Error('Konflik operation ID'); return existing.result; }
-  if(change.kind==='draft.create' || change.kind==='draft.update' || change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='settlement.confirmed-free' || change.kind==='serving.serve' || change.kind==='serving.correct') {
+  if(change.kind==='draft.create' || change.kind==='draft.update' || change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='settlement.confirmed-free' || change.kind==='payment.draft-noncash' || change.kind==='payment.confirmed-noncash' || change.kind==='serving.serve' || change.kind==='serving.correct') {
    const p=change.payload as {contractVersion?:unknown;sessionSource?:{id?:unknown;revision?:unknown}};
    if(p?.contractVersion!==(change.kind.startsWith('serving.')?1:2) || typeof p.sessionSource?.id!=='string' || !positive(p.sessionSource.revision,0)) throw new Error('Kontrak sesi kas wajib');
    const session=await db.state.get(`cash-session:${p.sessionSource.id}`);
    if(!session || session.revision!==p.sessionSource.revision) throw new Error('Sesi kas asal atau revisi tidak sesuai');
+  }
+  if(change.kind==='payment.draft-noncash' || change.kind==='payment.confirmed-noncash') {
+   const p=change.payload as {methodsSource?:{id?:unknown;revision?:unknown}};
+   if(p.methodsSource?.id!==change.storeId || !positive(p.methodsSource.revision,0)) throw new Error('Sumber metode tidak sah');
+   const methods=await db.state.get(`payment-methods:${change.storeId}`);
+   if(!methods || methods.revision!==p.methodsSource.revision) throw new Error('Revisi metode berubah');
   }
   for(const row of change.state) { const old=await db.state.get(row.key); if((old?.revision ?? null)!==row.expectedRevision) throw new Error('Revisi berubah');
    if(change.kind==='draft.update') {
