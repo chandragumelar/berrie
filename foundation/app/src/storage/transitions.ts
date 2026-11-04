@@ -1,4 +1,6 @@
 import { combineDraftFreeChange, draftFreeBatchPart, makeConfirmedFreeChange, type ConfirmedFreeInput, type DraftFreeInput, type FreeSessionSource } from './free-settlement';
+import { makePaymentMethodsChange, paymentMethodsKey, type PaymentMethodsInput } from './payment-methods';
+import { combineDraftNoncashChange, draftNoncashBatchPart, makeConfirmedNoncashChange, type ConfirmedNoncashInput, type DraftNoncashInput, type SourceRevision } from './noncash-payment';
 import { combineDraftCashChange, draftCashBatchPart, type DraftCashInput } from './draft-cash-contract';
 import { makeConfirmedCashPaymentChange, type ConfirmedCashPaymentInput } from './confirmed-cash-payment';
 import { cashBalance, type CashMovement } from '../domain/cash-session';
@@ -50,8 +52,8 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   const next=byKey.get(`cash-session:${sessionId}`)?.find(v=>v.revision===(ref.revision as number)+1);
   if(next) edge(change.operationId,next.change.operationId);
  };
- for(const original of changes.filter(c=>c.kind==='batch.confirm-first' || c.kind==='payment.draft-cash' || c.kind==='settlement.draft-free')) {
-  const change=original.kind==='payment.draft-cash'?draftCashBatchPart(original):original.kind==='settlement.draft-free'?draftFreeBatchPart(original):original;
+ for(const original of changes.filter(c=>c.kind==='batch.confirm-first' || c.kind==='payment.draft-cash' || c.kind==='settlement.draft-free' || c.kind==='payment.draft-noncash')) {
+  const change=original.kind==='payment.draft-cash'?draftCashBatchPart(original):original.kind==='settlement.draft-free'?draftFreeBatchPart(original):original.kind==='payment.draft-noncash'?draftNoncashBatchPart(original):original;
   const p=change.payload as {data?:{orderId:string;expectedDraftRevision:number;mappings:{skuId:string;groupId:string;revision:number}[];groups:{groupId:string;balance:number;revision:number}[]};metadata?:Record<string,unknown>};
   const data=p?.data, meta=p?.metadata, batchRow=change.state.find(s=>s.key===`first-batch:${change.targetId}`), job=change.state.find(s=>s.key===`kitchen-job:${change.targetId}`);
   const br=typed(batchRow?.value), jr=typed(job?.value);
@@ -87,6 +89,23 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   const operationId=change.operationId;
   if(canonical(change.ledger)!==canonical(plan.debits.map(debit=>({id:`batch-debit:${operationId}:${debit.groupId}`,operationId,value:{storeId:change.storeId,orderId:data.orderId,...debit}}))) || canonical(change.audit)!==canonical([{id:`batch-audit:${operationId}`,operationId,value:{batch:br.batch,actorId:change.actorId,policyVersion:change.policyVersion}}]) || canonical(change.outbox)!==canonical({id:`batch-outbox:${operationId}`,operationId,value:{orderId:data.orderId}}) || canonical(change.result)!==canonical({orderId:data.orderId,batchNumber:1})) throw new Error('Efek batch tidak sesuai');
  }
+ for(const change of changes.filter(c=>c.kind==='payment.confirmed-noncash' || c.kind==='payment.draft-noncash')) {
+  const p=change.payload as {data:ConfirmedNoncashInput|DraftNoncashInput;metadata:StockMetadata;contractVersion:number;sessionSource:SourceRevision;methodsSource:SourceRevision};
+  if(!p?.data || !p.metadata || p.contractVersion!==2 || !p.sessionSource || !p.methodsSource) throw new Error('Kontrak non-tunai tidak sah');
+  const isDraft=change.kind==='payment.draft-noncash';
+  if(isDraft && !['expectedDraftRevision,expectedMethodsRevision,expectedSessionRevision,groups,mappings,method,note,orderId,verified','expectedDraftRevision,expectedMethodsRevision,expectedSessionRevision,groups,mappings,method,orderId,verified'].includes(Object.keys(p.data).sort().join(','))) throw new Error('Intent non-tunai tidak sah');
+  const source=byKey.get(`first-batch:${change.targetId}`)?.find(v=>v.revision===(isDraft?0:(p.data as ConfirmedNoncashInput).expectedBatchRevision)), batch=typed(source?.value);
+  if(!source || source.change.storeId!==change.storeId || batch?.recordType!=='first-batch' || (isDraft ? source.change.operationId!==change.operationId : source.change.operationId===change.operationId)) throw new Error('Sumber batch non-tunai tidak sah');
+  sessionSource(change,batch.batch.draft.cashSessionId);edge(source.change.operationId,change.operationId);
+  const config=byKey.get(paymentMethodsKey(change.storeId))?.find(v=>v.revision===p.methodsSource.revision),methods=typed(config?.value);
+  if(p.methodsSource.id!==change.storeId || p.methodsSource.revision!==p.data.expectedMethodsRevision || !config || methods?.recordType!=='payment-methods' || methods.methods.storeId!==change.storeId || !['qris','transfer','ewallet'].includes(p.data.method) || methods.methods[p.data.method]!==true) throw new Error('Sumber metode tidak sah');
+  edge(config.change.operationId,change.operationId);
+  const next=byKey.get(paymentMethodsKey(change.storeId))?.find(v=>v.revision===p.methodsSource.revision+1);if(next) edge(change.operationId,next.change.operationId);
+  const data=isDraft?{orderId:p.data.orderId,expectedBatchRevision:0,expectedSessionRevision:p.data.expectedSessionRevision,expectedMethodsRevision:p.data.expectedMethodsRevision,method:p.data.method,verified:p.data.verified,...(Object.hasOwn(p.data,'note')?{note:p.data.note}:{})}:p.data as ConfirmedNoncashInput;
+  const payment=makeConfirmedNoncashChange(batch.batch,data,p.metadata,p.sessionSource,p.methodsSource);
+  const expected=isDraft?combineDraftNoncashChange(draftNoncashBatchPart(change),payment,p.data as DraftNoncashInput):payment;
+  if(canonical(change)!==canonical(expected)) throw new Error('Histori non-tunai tidak sesuai');
+ }
  // Reconstruct the entire free operation from its historical sources. No cash effect can be added.
  for(const change of changes.filter(c=>c.kind==='settlement.confirmed-free' || c.kind==='settlement.draft-free')) {
   const p=change.payload as {data:ConfirmedFreeInput|DraftFreeInput;metadata:StockMetadata;contractVersion:number;sessionSource:FreeSessionSource};
@@ -116,6 +135,12 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='payment-methods') {
+    const c=v.change,p=c.payload as {data:PaymentMethodsInput;metadata:StockMetadata};
+    const before=previous?.recordType==='payment-methods'?previous.methods:null;
+    if(c.kind!=='payment-methods.set' || key!==paymentMethodsKey(owner) || current.methods.storeId!==owner || !p?.data || !p.metadata || p.data.expectedRevision!==(v.revision===0?null:v.revision-1) || canonical(c)!==canonical(makePaymentMethodsChange(p.data,p.metadata,before))) throw new Error('Histori metode tidak sah');
+    previous=current;continue;
+   }
    if(current.recordType==='serving') {
     const c=v.change,p=c.payload as {data:ServingInput;metadata:StockMetadata;contractVersion:number;sessionSource:SessionSource},action=c.kind==='serving.serve'?'serve':c.kind==='serving.correct'?'correct':null;
     const source=byKey.get(`first-batch:${current.serving.orderId}`)?.find(x=>x.revision===0),batch=typed(source?.value);
@@ -127,7 +152,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     previous=current;continue;
    }
    if(current.recordType==='first-batch' || current.recordType==='kitchen-job') {
-    if(v.revision!==0 || i!==0 || !['batch.confirm-first','payment.draft-cash','settlement.draft-free'].includes(v.change.kind) || key!==`${current.recordType}:${current.batch.draft.orderId}`) throw new Error('Histori batch tidak sah');
+    if(v.revision!==0 || i!==0 || !['batch.confirm-first','payment.draft-cash','settlement.draft-free','payment.draft-noncash'].includes(v.change.kind) || key!==`${current.recordType}:${current.batch.draft.orderId}`) throw new Error('Histori batch tidak sah');
     previous=current;continue;
    }
    if(current.recordType==='sku-stock-mapping') {
@@ -143,7 +168,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    }
    if(current.recordType==='stock-group') {
     const g=current.stockGroup, change=v.change, prev=previous?.recordType==='stock-group'?previous.stockGroup:null;
-    if(change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free') {if(!prev) throw new Error('Stok batch tanpa sumber');previous=current;continue;}
+    if(change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='payment.draft-noncash') {if(!prev) throw new Error('Stok batch tanpa sumber');previous=current;continue;}
     const action=v.revision===0?'opening':change.kind==='stock.correction'?'correction':change.kind==='stock.minimum'?'minimum':null;
     const p=change.payload as {action?:unknown;data?:Record<string,unknown>;metadata?:Record<string,unknown>} | null;
     const data=p?.data, meta=p?.metadata;
@@ -168,6 +193,10 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    }
    if(current.recordType==='payment' || current.recordType==='customer-job') {
     const c=v.change, order=current.payment.orderId;
+    if((current.recordType==='payment' && current.schemaVersion===2) || (current.recordType==='customer-job' && current.schemaVersion===3)) {
+     if(v.revision!==0 || !['payment.confirmed-noncash','payment.draft-noncash'].includes(c.kind) || c.targetId!==order || key!==`${current.recordType}:${order}` || current.payment.storeId!==owner) throw new Error('Histori non-tunai tidak sah');
+     previous=current;continue;
+    }
     if(v.revision!==0 || !['payment.confirmed-cash','payment.draft-cash'].includes(c.kind) || c.targetId!==order || key!==`${current.recordType}:${order}` || current.payment.storeId!==owner || !c.state.some(row=>row.key===`cash-session:${current.payment.cashSessionId}` && typed(row.value)?.recordType==='cash-session')) throw new Error('Histori pembayaran tidak sah');
     previous=current;continue;
    }
@@ -251,7 +280,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   if(!actual || actual.revision!==last.revision || canonical(actual.value)!==canonical(last.value)) throw new Error('State tidak sesuai histori');
  }
  for(const numbers of draftSequences.values()) for(let i=1;i<=numbers.size;i++) if(!numbers.has(i)) throw new Error('Urutan nomor draft tidak lengkap');
- for(const identity of draftOrders.keys()) {const settlement=settlements.get(identity);if(refunds.has(identity) || (settlement && !['payment.confirmed-cash','payment.draft-cash','settlement.confirmed-free','settlement.draft-free'].includes(changes.find(c=>c.operationId===settlement.operationId)?.kind ?? ''))) throw new Error('Draft sudah memiliki settlement');}
+ for(const identity of draftOrders.keys()) {const settlement=settlements.get(identity);if(refunds.has(identity) || (settlement && !['payment.confirmed-cash','payment.draft-cash','settlement.confirmed-free','settlement.draft-free','payment.confirmed-noncash','payment.draft-noncash'].includes(changes.find(c=>c.operationId===settlement.operationId)?.kind ?? ''))) throw new Error('Draft sudah memiliki settlement');}
  for(const row of state) if(typed(row.value) && !byKey.has(row.key)) throw new Error('Record bisnis tanpa receipt');
  for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='settlement' || source.value.recordType==='refund-history' ? source.value.settlement : null)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
  const indegree=new Map(changes.map(change=>[change.operationId,0]));

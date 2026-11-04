@@ -12,6 +12,7 @@ import { cashBalance } from '../domain/cash-session';
 import { makeConfirmedCashPaymentChange } from './confirmed-cash-payment';
 import { batchIntent, combineDraftCashChange, type DraftCashInput } from './draft-cash-contract';
 import { combineDraftFreeChange, freeBatchIntent, makeConfirmedFreeChange, validateFreeReason, type DraftFreeInput } from './free-settlement';
+import { combineDraftNoncashChange, makeConfirmedNoncashChange, noncashBatchIntent, requireMethods, type DraftNoncashInput } from './noncash-payment';
 
 export interface ConfirmFirstBatchInput {
  orderId:string;
@@ -21,15 +22,16 @@ export interface ConfirmFirstBatchInput {
 }
 
 /** Internal only. Identity and policy metadata do not authorize this operation. */
-function saveFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput | DraftCashInput | DraftFreeInput, metadata:StockMetadata, mode:'confirm'|'cash'|'free', locks:LockProvider=navigator.locks, now:()=>string=()=>new Date().toISOString()):Promise<unknown> {
- const data=copyInput(input) as DraftCashInput & DraftFreeInput, meta=copyInput(metadata) as StockMetadata;
+function saveFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput | DraftCashInput | DraftFreeInput | DraftNoncashInput, metadata:StockMetadata, mode:'confirm'|'cash'|'free'|'noncash', locks:LockProvider=navigator.locks, now:()=>string=()=>new Date().toISOString()):Promise<unknown> {
+ const data=copyInput(input) as DraftCashInput & DraftFreeInput & DraftNoncashInput, meta=copyInput(metadata) as StockMetadata;
  const intent={data,metadata:meta};canonical(intent);
  if(!data || typeof data.orderId!=='string' || !data.orderId.trim() || !Number.isSafeInteger(data.expectedDraftRevision) || data.expectedDraftRevision<0 || !Array.isArray(data.mappings) || !Array.isArray(data.groups)) throw new Error('Intent batch tidak sah');
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
-  if(prior) {const change=JSON.parse(prior.payload) as AtomicChange;const payload=change.payload as typeof intent;if(change.kind!==(mode==='cash'?'payment.draft-cash':mode==='free'?'settlement.draft-free':'batch.confirm-first') || canonical({data:payload.data,metadata:payload.metadata})!==canonical(intent)) throw new Error('Konflik operation ID');return prior.result;}
+  if(prior) {const change=JSON.parse(prior.payload) as AtomicChange;const payload=change.payload as typeof intent;if(change.kind!==(mode==='cash'?'payment.draft-cash':mode==='free'?'settlement.draft-free':mode==='noncash'?'payment.draft-noncash':'batch.confirm-first') || canonical({data:payload.data,metadata:payload.metadata})!==canonical(intent)) throw new Error('Konflik operation ID');return prior.result;}
   if(mode!=='confirm') {
-   if(Object.keys(data).sort().join(',')!==(mode==='cash'?'expectedDraftRevision,expectedSessionRevision,groups,mappings,orderId,received':'expectedDraftRevision,expectedSessionRevision,groups,mappings,orderId,reason')) throw new Error('Intent pembayaran tidak sah');
+   const keys=Object.keys(data).sort().join(',');
+   if(!(mode==='cash'?keys==='expectedDraftRevision,expectedSessionRevision,groups,mappings,orderId,received':mode==='free'?keys==='expectedDraftRevision,expectedSessionRevision,groups,mappings,orderId,reason':['expectedDraftRevision,expectedMethodsRevision,expectedSessionRevision,groups,mappings,method,note,orderId,verified','expectedDraftRevision,expectedMethodsRevision,expectedSessionRevision,groups,mappings,method,orderId,verified'].includes(keys))) throw new Error('Intent pembayaran tidak sah');
    if(mode==='free') validateFreeReason(data.reason);
    validateCheckpoint(await checkpoint(db));
    if(await db.state.get(`settlement:${data.orderId}`) || await db.state.get(`payment:${data.orderId}`) || await db.state.get(`customer-job:${data.orderId}`)) throw new Error('Pesanan sudah dibayar');
@@ -76,6 +78,12 @@ function saveFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput | DraftC
    change.payload={...intent,data:freeBatchIntent(data),contractVersion:2,sessionSource};
    return commit(combineDraftFreeChange(change,free,data));
   }
+  if(mode==='noncash') {
+   const methodsSource=await requireMethods(db,meta.storeId,data);
+   const payment=makeConfirmedNoncashChange(batch,{orderId:data.orderId,expectedBatchRevision:0,expectedSessionRevision:data.expectedSessionRevision,expectedMethodsRevision:data.expectedMethodsRevision,method:data.method,verified:data.verified,...(Object.hasOwn(data,'note')?{note:data.note}: {})},meta,sessionSource,methodsSource);
+   change.payload={...intent,data:noncashBatchIntent(data),contractVersion:2,sessionSource};
+   return commit(combineDraftNoncashChange(change,payment,data));
+  }
   const sessionRow=await db.state.get(`cash-session:${draft.cashSessionId}`);
   const sessionRecord=sessionRow?.value as Extract<BusinessRecord,{recordType:'cash-session'}>;
   const before=cashBalance(cashMovements((await db.receipts.toArray()).map(r=>JSON.parse(r.payload) as AtomicChange),draft.cashSessionId),sessionRecord.session);
@@ -93,3 +101,4 @@ export function payDraftCash(db:BerrieDatabase,input:DraftCashInput,metadata:Sto
 
 /** Confirms the stored draft and settles exactly Rp0 atomically; owner approval is a T-04 prerequisite. */
 export function settleDraftFree(db:BerrieDatabase,input:DraftFreeInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> { return saveFirstBatch(db,input,metadata,'free',locks,now); }
+export function payDraftNoncash(db:BerrieDatabase,input:DraftNoncashInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> { return saveFirstBatch(db,input,metadata,'noncash',locks,now); }
