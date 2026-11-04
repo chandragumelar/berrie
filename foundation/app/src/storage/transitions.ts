@@ -1,3 +1,4 @@
+import { correctionKey, makePaymentCorrectionChange, type CorrectPaymentMethodInput } from './payment-correction';
 import { combineDraftFreeChange, draftFreeBatchPart, makeConfirmedFreeChange, type ConfirmedFreeInput, type DraftFreeInput, type FreeSessionSource } from './free-settlement';
 import { makePaymentMethodsChange, paymentMethodsKey, type PaymentMethodsInput } from './payment-methods';
 import { combineDraftNoncashChange, draftNoncashBatchPart, makeConfirmedNoncashChange, type ConfirmedNoncashInput, type DraftNoncashInput, type SourceRevision } from './noncash-payment';
@@ -135,6 +136,11 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='payment-corrections') {
+    const c=v.change, p=c.payload as {data:CorrectPaymentMethodInput};
+    if(c.kind!=='payment.correct-method' || c.state.length!==2 || c.state.filter(row=>typed(row.value)?.recordType==='cash-session').length!==1 || !p?.data || key!==correctionKey(c.targetId) || p.data.orderId!==c.targetId || p.data.expectedRevision!==(v.revision===0?null:v.revision-1) || current.corrections.length!==v.revision+1 || (previous && (previous.recordType!=='payment-corrections' || canonical(current.corrections.slice(0,-1))!==canonical(previous.corrections)))) throw new Error('Histori koreksi tidak sah');
+    previous=current;continue;
+   }
    if(current.recordType==='payment-methods') {
     const c=v.change,p=c.payload as {data:PaymentMethodsInput;metadata:StockMetadata};
     const before=previous?.recordType==='payment-methods'?previous.methods:null;
@@ -202,6 +208,16 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    }
    if(current.recordType==='cash-session') {
     const session=current.session, change=v.change;
+    if(change.kind==='payment.correct-method') {
+     const p=change.payload as {data:CorrectPaymentMethodInput;metadata:StockMetadata;contractVersion:number;paymentSource:{id:string;revision:number};sessionSource:{id:string;revision:number}};
+     const source=byKey.get(`payment:${change.targetId}`)?.find(x=>x.revision===p?.paymentSource?.revision), payment=typed(source?.value);
+     const prior=p?.data?.expectedRevision===null?undefined:byKey.get(correctionKey(change.targetId))?.find(x=>x.revision===p?.data?.expectedRevision), history=typed(prior?.value);
+     if(!p?.data || !p.metadata || p.contractVersion!==1 || p.paymentSource?.id!==`payment:${change.targetId}` || p.paymentSource.revision!==0 || !source || payment?.recordType!=='payment' || source.change.storeId!==owner || !['payment.confirmed-cash','payment.draft-cash','payment.confirmed-noncash','payment.draft-noncash'].includes(source.change.kind) || previous?.recordType!=='cash-session' || canonical(previous.session)!==canonical(session) || p.data.expectedSessionRevision!==v.revision-1 || p.sessionSource?.id!==session.id || p.sessionSource.revision!==v.revision-1 || key!==`cash-session:${session.id}` || (p.data.expectedRevision!==null && (!prior || history?.recordType!=='payment-corrections'))) throw new Error('Sumber koreksi tidak sah');
+     edge(source.change.operationId,change.operationId); if(prior) edge(prior.change.operationId,change.operationId);
+     const before=cashBalance(cashEntries,session);
+     if(canonical(change)!==canonical(makePaymentCorrectionChange(payment.payment,session,history?.recordType==='payment-corrections'?history.corrections:[],p.data,p.metadata,before))) throw new Error('Histori koreksi tidak sesuai');
+     cashEntries.push(change.ledger[0].value as CashMovement);cashBalance(cashEntries,session);previous=current;continue;
+    }
     if(change.kind==='payment.draft-cash') {
      const payload=change.payload as {data:DraftCashInput;metadata:StockMetadata;contractVersion:number};
      const batchRow=change.state.find(x=>x.key===`first-batch:${change.targetId}`), batch=typed(batchRow?.value);

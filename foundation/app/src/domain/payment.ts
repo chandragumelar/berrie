@@ -23,3 +23,32 @@ export function validateCashPayment(value:unknown): asserts value is CashPayment
  const amount=integer(p.amount,1,Number.MAX_SAFE_INTEGER),received=integer(p.received,0,Number.MAX_SAFE_INTEGER),change=integer(p.change,0,Number.MAX_SAFE_INTEGER);
  if(received<amount || change!==received-amount) throw new Error('Uang diterima atau kembalian tidak sah');
 }
+
+export type PaymentMethod = CashPayment['method'] | NoncashPayment['method'];
+export type Payment = CashPayment | NoncashPayment;
+export interface MethodCorrection {
+ paymentId:string; orderId:string; storeId:string; cashSessionId:string;
+ from:PaymentMethod; to:PaymentMethod; amount:number; reason:string; actorId:string; recordedAt:string;
+}
+export function validateMethodCorrection(value:unknown):asserts value is MethodCorrection {
+ if(!value || typeof value!=='object' || Array.isArray(value) || Object.getPrototypeOf(value)!==Object.prototype) throw new Error('Koreksi metode tidak sah');
+ const c=value as Record<string,unknown>;
+ if(Object.keys(c).sort().join(',')!=='actorId,amount,cashSessionId,from,orderId,paymentId,reason,recordedAt,storeId,to' || ![c.paymentId,c.orderId,c.storeId,c.cashSessionId,c.actorId].every(v=>typeof v==='string' && !!v.trim() && v.length<=200) || typeof c.reason!=='string' || !c.reason.trim() || c.reason.length>500 || !['cash','qris','transfer','ewallet'].includes(c.from as string) || !['cash','qris','transfer','ewallet'].includes(c.to as string) || c.from===c.to || typeof c.recordedAt!=='string') throw new Error('Koreksi metode tidak sah');
+ integer(c.amount,1,Number.MAX_SAFE_INTEGER); draftDateCode(c.recordedAt,'UTC');
+}
+/** Derive classification only from the immutable payment and a validated, ordered chain. */
+export function effectivePaymentMethod(payment:Payment, corrections:MethodCorrection[]):PaymentMethod {
+ if(payment.method==='cash') validateCashPayment(payment); else validateNoncashPayment(payment);
+ if(!Array.isArray(corrections)) throw new Error('Histori koreksi tidak sah');
+ let method:PaymentMethod=payment.method;
+ for(const c of corrections) {
+  validateMethodCorrection(c);
+  if(c.paymentId!==payment.id || c.orderId!==payment.orderId || c.storeId!==payment.storeId || c.cashSessionId!==payment.cashSessionId || c.amount!==payment.amount || c.from!==method) throw new Error('Rantai koreksi tidak sah');
+  method=c.to;
+ }
+ return method;
+}
+export function correctionDeltas(correction:MethodCorrection):[{method:PaymentMethod; delta:number},{method:PaymentMethod; delta:number}] {
+ validateMethodCorrection(correction);
+ return [{method:correction.from,delta:-correction.amount},{method:correction.to,delta:correction.amount}];
+}
