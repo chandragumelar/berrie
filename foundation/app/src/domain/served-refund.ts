@@ -11,10 +11,12 @@ export interface ServedRefundEvent {
  units:{id:string;amount:number}[]; amount:number; method:PaymentMethod;
  reason:string; actorId:string; recordedAt:string; moneyReturned:true;
 }
-export interface StockReturnEvent {
+export interface RefundStockReturnEvent {
  id:string; refundId:string; paymentId:string; orderId:string; storeId:string;
  units:{id:string;groupId:string}[]; reason:string; actorId:string; recordedAt:string; sellable:true;
 }
+export interface CancellationStockReturnEvent extends Omit<RefundStockReturnEvent,'refundId'> { cancellationId:string }
+export type StockReturnEvent=RefundStockReturnEvent|CancellationStockReturnEvent;
 const id=(v:unknown):v is string=>typeof v==='string' && !!v.trim() && v.length<=200;
 const reason=(v:unknown):v is string=>typeof v==='string' && !!v.trim() && v.length<=500;
 function plain(v:unknown):v is Record<string,unknown> { return !!v && typeof v==='object' && !Array.isArray(v) && Object.getPrototypeOf(v)===Object.prototype; }
@@ -25,8 +27,10 @@ export function validateServedRefundEvent(v:unknown):asserts v is ServedRefundEv
  for(const unit of v.units) {if(!plain(unit) || Object.keys(unit).sort().join(',')!=='amount,id' || !id(unit.id) || seen.has(unit.id) || !Number.isSafeInteger(unit.amount) || (unit.amount as number)<=0) throw new Error('Unit refund tidak sah');seen.add(unit.id);sum+=unit.amount as number;}
  if(!Number.isSafeInteger(sum) || sum!==v.amount) throw new Error('Nilai refund tidak sah');
 }
-export function validateStockReturnEvent(v:unknown):asserts v is StockReturnEvent {
- if(!plain(v) || Object.keys(v).sort().join(',')!=='actorId,id,orderId,paymentId,reason,recordedAt,refundId,sellable,storeId,units' || ![v.id,v.refundId,v.paymentId,v.orderId,v.storeId,v.actorId].every(id) || !reason(v.reason) || v.sellable!==true || typeof v.recordedAt!=='string' || !Array.isArray(v.units) || !v.units.length) throw new Error('Return stok tidak sah');
+export function validateStockReturnEvent(v:unknown,allowCancellation=false):asserts v is StockReturnEvent {
+ if(!plain(v)) throw new Error('Return stok tidak sah');
+ const cancellation=Object.hasOwn(v,'cancellationId');
+ if((cancellation && !allowCancellation) || Object.keys(v).sort().join(',')!==(cancellation?'actorId,cancellationId,id,orderId,paymentId,reason,recordedAt,sellable,storeId,units':'actorId,id,orderId,paymentId,reason,recordedAt,refundId,sellable,storeId,units') || ![v.id,cancellation?v.cancellationId:v.refundId,v.paymentId,v.orderId,v.storeId,v.actorId].every(id) || !reason(v.reason) || v.sellable!==true || typeof v.recordedAt!=='string' || !Array.isArray(v.units) || !v.units.length) throw new Error('Return stok tidak sah');
  draftDateCode(v.recordedAt,'UTC');const seen=new Set<string>();
  for(const unit of v.units) {if(!plain(unit) || Object.keys(unit).sort().join(',')!=='groupId,id' || !id(unit.id) || !id(unit.groupId) || seen.has(unit.id)) throw new Error('Unit return tidak sah');seen.add(unit.id);}
 }
@@ -35,7 +39,7 @@ export function validateStockReturnEvent(v:unknown):asserts v is StockReturnEven
 export function planServedRefund(batch:FirstBatch, payment:Payment, settlement:SettlementSnapshot, serving:ServingState, history:RefundRecord[], selection:RefundSelection[]):RefundRecord {
  validateFirstBatch(batch);
  if(payment.method==='cash') validateCashPayment(payment); else validateNoncashPayment(payment);
- validateSettlementSnapshot(settlement); validateServingState(serving); validateRefundHistory(settlement,history);
+ validateSettlementSnapshot(settlement); validateServingState(serving,true); validateRefundHistory(settlement,history);
  if(settlement.source!=='payment' || payment.id!==`payment:${payment.orderId}` || payment.settlementId!==`settlement:${payment.orderId}` || payment.orderId!==settlement.orderId || payment.orderId!==batch.draft.orderId || payment.storeId!==batch.storeId || payment.cashSessionId!==batch.draft.cashSessionId || payment.amount!==settlement.paymentAmount || serving.orderId!==payment.orderId || serving.storeId!==payment.storeId || serving.cashSessionId!==payment.cashSessionId) throw new Error('Sumber refund tidak sesuai');
  const batchIds=batch.draft.items.flatMap(item=>item.unitIds).sort(), settlementIds=settlement.units.map(unit=>unit.id).sort(), servingIds=serving.units.map(unit=>unit.id).sort();
  if(JSON.stringify(batchIds)!==JSON.stringify(settlementIds) || JSON.stringify(batchIds)!==JSON.stringify(servingIds)) throw new Error('Unit sumber refund tidak sesuai');

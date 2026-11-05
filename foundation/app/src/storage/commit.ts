@@ -32,7 +32,7 @@ async function commitInTransaction(db:BerrieDatabase, change:AtomicChange):Promi
   if(existing) { if(existing.payload!==payload) throw new Error('Konflik operation ID'); return existing.result; }
   if(change.kind==='draft.create' || change.kind==='draft.update' || change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='settlement.confirmed-free' || change.kind==='payment.draft-noncash' || change.kind==='payment.confirmed-noncash' || change.kind==='serving.serve' || change.kind==='serving.correct') {
    const p=change.payload as {contractVersion?:unknown;sessionSource?:{id?:unknown;revision?:unknown}};
-   if(p?.contractVersion!==(change.kind.startsWith('serving.')?1:2) || typeof p.sessionSource?.id!=='string' || !positive(p.sessionSource.revision,0)) throw new Error('Kontrak sesi kas wajib');
+   if(p?.contractVersion!==2 || typeof p.sessionSource?.id!=='string' || !positive(p.sessionSource.revision,0)) throw new Error('Kontrak sesi kas wajib');
    const session=await db.state.get(`cash-session:${p.sessionSource.id}`);
    if(!session || session.revision!==p.sessionSource.revision) throw new Error('Sesi kas asal atau revisi tidak sesuai');
   }
