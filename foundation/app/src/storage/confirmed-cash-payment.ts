@@ -36,6 +36,7 @@ export function payConfirmedFirstBatchCash(db:BerrieDatabase,input:ConfirmedCash
   if(prior) {const c=JSON.parse(prior.payload) as AtomicChange,p=c.payload as typeof intent;if(c.kind!=='payment.confirmed-cash' || canonical({data:p.data,metadata:p.metadata})!==canonical(intent)) throw new Error('Konflik operation ID');return prior.result;}
   const snapshot=await checkpoint(db);validateCheckpoint(snapshot);
   if(!data || typeof data.orderId!=='string' || !data.orderId.trim()) throw new Error('Pesanan tidak sah');
+  if(await db.state.get(`unpaid-cancellation:${data.orderId}`)) throw new Error('Batch sudah dibatalkan');
   if(await db.state.get(`settlement:${data.orderId}`) || await db.state.get(`payment:${data.orderId}`) || await db.state.get(`customer-job:${data.orderId}`)) throw new Error('Pesanan sudah dibayar');
   const row=await db.state.get(`first-batch:${data.orderId}`);validateBusinessRecord(row?.value);const record=row?.value as BusinessRecord;
   if(!row || row.revision!==data.expectedBatchRevision || record?.recordType!=='first-batch' || record.batch.storeId!==meta.storeId || record.batch.draft.orderId!==data.orderId) throw new Error('Batch atau revisi tidak sesuai');
