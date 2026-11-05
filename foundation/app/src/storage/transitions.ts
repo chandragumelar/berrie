@@ -1,4 +1,5 @@
 import { correctionKey, makePaymentCorrectionChange, type CorrectPaymentMethodInput } from './payment-correction';
+import { makeServedRefundChange, makeStockReturnChange, refundKey, returnKey, type RefundSources, type ServedRefundInput, type ReturnRefundInput } from './served-refunds';
 import { combineDraftFreeChange, draftFreeBatchPart, makeConfirmedFreeChange, type ConfirmedFreeInput, type DraftFreeInput, type FreeSessionSource } from './free-settlement';
 import { makePaymentMethodsChange, paymentMethodsKey, type PaymentMethodsInput } from './payment-methods';
 import { combineDraftNoncashChange, draftNoncashBatchPart, makeConfirmedNoncashChange, type ConfirmedNoncashInput, type DraftNoncashInput, type SourceRevision } from './noncash-payment';
@@ -42,6 +43,41 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const change of changes) {const key=JSON.stringify([change.storeId,change.deviceId,change.deviceEpoch]);const stream=streams.get(key) ?? [];stream.push(change);streams.set(key,stream);}
  for(const stream of streams.values()) {stream.sort((a,b)=>a.localSequence-b.localSequence);for(let i=1;i<stream.length;i++)edge(stream[i-1].operationId,stream[i].operationId);}
  const stateByKey=new Map(state.map(row=>[row.key,row]));
+ // Reconstruct each new operation exclusively from referenced historical revisions.
+ for(const change of changes.filter(c=>(c.kind==='refund.served' || c.kind==='refund.return-stock') && c.state.some(row=>!!typed(row.value)))) {
+  const p=change.payload as {data:ServedRefundInput|ReturnRefundInput;metadata:StockMetadata;contractVersion:number};
+  if(!p?.data || !p.metadata || p.contractVersion!==1 || p.data.orderId!==change.targetId) throw new Error('Kontrak refund tidak sah');
+  const version=(key:string,revision:number|null,type:BusinessRecord['recordType'])=>{
+   const versions=byKey.get(key) ?? [],source=revision===null?undefined:versions.find(v=>v.revision===revision),record=typed(source?.value);
+   if(revision!==null && (!source || source.change.storeId!==change.storeId || record?.recordType!==type)) throw new Error('Sumber refund tidak sah');
+   if(source) edge(source.change.operationId,change.operationId);
+   const next=versions.find(v=>v.revision===(revision ?? -1)+1);if(next) edge(change.operationId,next.change.operationId);
+   return record;
+  };
+  const order=change.targetId,batch=version(`first-batch:${order}`,0,'first-batch'),payment=version(`payment:${order}`,0,'payment'),settlement=version(`settlement:${order}`,0,'settlement');
+  if(batch?.recordType!=='first-batch' || payment?.recordType!=='payment' || settlement?.recordType!=='settlement') throw new Error('Payment asal tidak sah');
+  const paymentVersion=byKey.get(`payment:${order}`)?.find(v=>v.revision===0);
+  if(!paymentVersion || !['payment.confirmed-cash','payment.draft-cash','payment.confirmed-noncash','payment.draft-noncash'].includes(paymentVersion.change.kind)) throw new Error('Jenis payment tidak didukung');
+  if(changes.some(c=>c.state.some(row=>{const v=typed(row.value);return v?.recordType==='refund-history' && v.settlement.orderId===order && c.storeId===change.storeId;}))) throw new Error('Histori refund lama memerlukan rekonsiliasi');
+  const d=p.data,isRefund=change.kind==='refund.served',refundRevision=d.expectedRefundRevision;
+  const refunds=version(refundKey(order),refundRevision,'served-refunds');
+  const returnRevision=isRefund?(d as ServedRefundInput).returnStock?.expectedReturnRevision ?? null:(d as ReturnRefundInput).expectedReturnRevision;
+  const returns=isRefund && (d as ServedRefundInput).returnStock===null?undefined:version(returnKey(order),returnRevision,'stock-returns');
+  const servingRevision=isRefund?(d as ServedRefundInput).expectedServingRevision:0;
+  const serving=isRefund?version(`serving:${order}`,servingRevision,'serving'):typed(byKey.get(`serving:${order}`)?.find(v=>v.revision===0)?.value);
+  const correctionRevision=isRefund?(d as ServedRefundInput).expectedCorrectionRevision:null;
+  const corrections=isRefund?version(correctionKey(order),correctionRevision,'payment-corrections'):undefined;
+  const sessionRevision=isRefund?(d as ServedRefundInput).expectedSessionRevision:0;
+  const session=isRefund?version(`cash-session:${payment.payment.cashSessionId}`,sessionRevision,'cash-session'):typed(byKey.get(`cash-session:${payment.payment.cashSessionId}`)?.find(v=>v.revision===0)?.value);
+  if(serving?.recordType!=='serving' || session?.recordType!=='cash-session' || (refunds && refunds.recordType!=='served-refunds') || (returns && returns.recordType!=='stock-returns') || (corrections && corrections.recordType!=='payment-corrections')) throw new Error('Sumber refund tidak lengkap');
+  const groupRefs=isRefund?(d as ServedRefundInput).returnStock?.groups ?? []:(d as ReturnRefundInput).groups;
+  if(!Array.isArray(groupRefs)) throw new Error('Sumber grup tidak sah');
+  const groups=groupRefs.map(g=>{const row=version(`stock-group:${g.groupId}`,g.revision,'stock-group');if(row?.recordType!=='stock-group') throw new Error('Sumber stok tidak sah');return row.stockGroup;});
+  const entries=(byKey.get(`cash-session:${session.session.id}`) ?? []).filter(v=>v.revision<=sessionRevision).sort((a,b)=>a.revision-b.revision).map(v=>v.change.ledger[0]?.value as CashMovement);
+  const sources:RefundSources={batch:batch.batch,payment:payment.payment,settlement:settlement.settlement,serving:serving.serving,session:session.session,refunds:refunds?.refunds ?? [],returns:returns?.returns ?? [],corrections:corrections?.corrections ?? [],groups,before:cashBalance(entries,session.session)};
+  const expected=isRefund?makeServedRefundChange(sources,d as ServedRefundInput,p.metadata):makeStockReturnChange(sources,d as ReturnRefundInput,p.metadata);
+  if(canonical(change)!==canonical(expected)) throw new Error('Efek refund tidak sesuai sumber');
+ }
  const sessionSource=(change:AtomicChange,sessionId:string,version=2)=>{
   const payload=change.payload as {contractVersion?:unknown;sessionSource?:{id?:unknown;revision?:unknown}};
   if(payload?.contractVersion===undefined && version===2) return; // Historic contract did not bind a session.
@@ -136,6 +172,17 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='served-refunds') {
+    const c=v.change,p=c.payload as {data:ServedRefundInput};
+    if(c.kind!=='refund.served' || key!==refundKey(c.targetId) || !p?.data || p.data.expectedRefundRevision!==(v.revision===0?null:v.revision-1) || current.refunds.length!==v.revision+1 || (previous && (previous.recordType!=='served-refunds' || canonical(current.refunds.slice(0,-1))!==canonical(previous.refunds)))) throw new Error('Histori refund tidak sah');
+    previous=current;continue;
+   }
+   if(current.recordType==='stock-returns') {
+    const c=v.change,p=c.payload as {data:ServedRefundInput|ReturnRefundInput};
+    const revision=c.kind==='refund.served'?(p?.data as ServedRefundInput)?.returnStock?.expectedReturnRevision:(p?.data as ReturnRefundInput)?.expectedReturnRevision;
+    if(!['refund.served','refund.return-stock'].includes(c.kind) || key!==returnKey(c.targetId) || revision!==(v.revision===0?null:v.revision-1) || current.returns.length!==v.revision+1 || (previous && (previous.recordType!=='stock-returns' || canonical(current.returns.slice(0,-1))!==canonical(previous.returns)))) throw new Error('Histori return tidak sah');
+    previous=current;continue;
+   }
    if(current.recordType==='payment-corrections') {
     const c=v.change, p=c.payload as {data:CorrectPaymentMethodInput};
     if(c.kind!=='payment.correct-method' || c.state.length!==2 || c.state.filter(row=>typed(row.value)?.recordType==='cash-session').length!==1 || !p?.data || key!==correctionKey(c.targetId) || p.data.orderId!==c.targetId || p.data.expectedRevision!==(v.revision===0?null:v.revision-1) || current.corrections.length!==v.revision+1 || (previous && (previous.recordType!=='payment-corrections' || canonical(current.corrections.slice(0,-1))!==canonical(previous.corrections)))) throw new Error('Histori koreksi tidak sah');
@@ -174,7 +221,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    }
    if(current.recordType==='stock-group') {
     const g=current.stockGroup, change=v.change, prev=previous?.recordType==='stock-group'?previous.stockGroup:null;
-    if(change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='payment.draft-noncash') {if(!prev) throw new Error('Stok batch tanpa sumber');previous=current;continue;}
+    if(change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='payment.draft-noncash' || change.kind==='refund.served' || change.kind==='refund.return-stock') {if(!prev) throw new Error('Stok tanpa sumber');previous=current;continue;}
     const action=v.revision===0?'opening':change.kind==='stock.correction'?'correction':change.kind==='stock.minimum'?'minimum':null;
     const p=change.payload as {action?:unknown;data?:Record<string,unknown>;metadata?:Record<string,unknown>} | null;
     const data=p?.data, meta=p?.metadata;
@@ -208,6 +255,11 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    }
    if(current.recordType==='cash-session') {
     const session=current.session, change=v.change;
+    if(change.kind==='refund.served') {
+     const data=(change.payload as {data:ServedRefundInput})?.data;
+     if(previous?.recordType!=='cash-session' || canonical(previous.session)!==canonical(session) || data?.expectedSessionRevision!==v.revision-1 || key!==`cash-session:${session.id}`) throw new Error('Sesi refund tidak sah');
+     cashEntries.push(change.ledger[0].value as CashMovement);cashBalance(cashEntries,session);previous=current;continue;
+    }
     if(change.kind==='payment.correct-method') {
      const p=change.payload as {data:CorrectPaymentMethodInput;metadata:StockMetadata;contractVersion:number;paymentSource:{id:string;revision:number};sessionSource:{id:string;revision:number}};
      const source=byKey.get(`payment:${change.targetId}`)?.find(x=>x.revision===p?.paymentSource?.revision), payment=typed(source?.value);
