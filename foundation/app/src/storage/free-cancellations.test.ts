@@ -60,7 +60,8 @@ it('return bersama, return served dan koreksi tidak menggandakan stok',async()=>
  await expect(returnFreeStock(db,{...ret,expectedServingRevision:2,expectedReturnRevision:1,groups:group(3,2)},meta('again',10),locks)).rejects.toThrow();
  await expect(returnFreeStock(db,{...ret,expectedServingRevision:2,expectedReturnRevision:1,cancellationId:cancel.cancellation.id,unitIds:cancel.cancellation.unitIds,groups:group(3,2)},meta('again',10),locks)).rejects.toThrow();
  await expect(serveUnits(db,{orderId:d.orderId,expectedRevision:2,unitIds:cancel.cancellation.unitIds,reason:null},meta('again',10),locks)).rejects.toThrow();expect(await checkpoint(db)).toEqual(before);
- await cancelFreeUnits(db,{...cancelInput(d),expectedServingRevision:2,expectedCancellationRevision:0,returnStock:null},meta('cancel2',10),locks);
+ const second=await cancelFreeUnits(db,{...cancelInput(d),expectedServingRevision:2,expectedCancellationRevision:0,returnStock:null},meta('cancel2',10),locks) as {cancellation:{id:string;unitIds:string[]}};
+ const final=await checkpoint(db);await expect(returnFreeStock(db,{...ret,expectedServingRevision:3,expectedCancellationRevision:1,expectedReturnRevision:1,cancellationId:second.cancellation.id,unitIds:second.cancellation.unitIds,groups:group(3,2)},meta('again',11),locks)).rejects.toThrow();expect(await checkpoint(db)).toEqual(final);
  }finally{await db.delete();}});
 
 it('menolak pilihan, konfirmasi, revisi, grup, dan return duplikat tanpa efek',async()=>{const db=new BerrieDatabase(crypto.randomUUID());try{
