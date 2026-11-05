@@ -29,6 +29,7 @@ function saveFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput | DraftC
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
   if(prior) {const change=JSON.parse(prior.payload) as AtomicChange;const payload=change.payload as typeof intent;if(change.kind!==(mode==='cash'?'payment.draft-cash':mode==='free'?'settlement.draft-free':mode==='noncash'?'payment.draft-noncash':'batch.confirm-first') || canonical({data:payload.data,metadata:payload.metadata})!==canonical(intent)) throw new Error('Konflik operation ID');return prior.result;}
+  if(await db.state.get(`draft-cancellation:${data.orderId}`)) throw new Error('Draft sudah dibatalkan');
   if(mode!=='confirm') {
    const keys=Object.keys(data).sort().join(',');
    if(!(mode==='cash'?keys==='expectedDraftRevision,expectedSessionRevision,groups,mappings,orderId,received':mode==='free'?keys==='expectedDraftRevision,expectedSessionRevision,groups,mappings,orderId,reason':['expectedDraftRevision,expectedMethodsRevision,expectedSessionRevision,groups,mappings,method,note,orderId,verified','expectedDraftRevision,expectedMethodsRevision,expectedSessionRevision,groups,mappings,method,orderId,verified'].includes(keys))) throw new Error('Intent pembayaran tidak sah');

@@ -1,3 +1,5 @@
+import { makeDraftCancellationChange, type CancelDraftInput } from './draft-cancellation';
+import type { DraftMetadata } from './drafts';
 import { cancellationKey, makePaidCancellationChange, makeRefundDueChange, makeCancelRefundChange, makeCancelledReturnChange, type CancelPaidInput, type RefundDueInput, type CancelRefundInput, type ReturnCancelledInput } from './paid-cancellations';
 import { freeCancellationKey, freeReturnKey, makeFreeCancellationChange, makeFreeReturnChange, type CancelFreeInput, type ReturnFreeInput } from './free-cancellations';
 import { correctionKey, makePaymentCorrectionChange, type CorrectPaymentMethodInput } from './payment-correction';
@@ -194,6 +196,14 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   const next=byKey.get(`cash-session:${sessionId}`)?.find(v=>v.revision===(ref.revision as number)+1);
   if(next) edge(change.operationId,next.change.operationId);
  };
+ for(const change of changes.filter(c=>c.kind==='draft.cancel')) {
+  const p=change.payload as {data:CancelDraftInput;metadata:DraftMetadata;contractVersion:number;sessionSource:{id:string;revision:number}};
+  if(!p?.data || !p.metadata || p.contractVersion!==2) throw new Error('Kontrak pembatalan draft tidak sah');
+  const source=byKey.get(`draft:${change.targetId}`)?.find(v=>v.revision===p.data.expectedRevision), draft=typed(source?.value), current=stateByKey.get(`draft:${change.targetId}`);
+  if(!source || source.change.storeId!==change.storeId || draft?.recordType!=='draft' || !current || current.revision!==p.data.expectedRevision || p.data.orderId!==change.targetId || ['first-batch','settlement','payment','customer-job','refund-history'].some(prefix=>byKey.has(`${prefix}:${change.targetId}`))) throw new Error('Sumber pembatalan draft tidak sah');
+  sessionSource(change,draft.draft.cashSessionId);edge(source.change.operationId,change.operationId);
+  if(canonical(change)!==canonical(makeDraftCancellationChange(draft.draft,p.data,p.metadata,p.sessionSource))) throw new Error('Efek pembatalan draft tidak sesuai');
+ }
  for(const original of changes.filter(c=>c.kind==='batch.confirm-first' || c.kind==='payment.draft-cash' || c.kind==='settlement.draft-free' || c.kind==='payment.draft-noncash')) {
   const change=original.kind==='payment.draft-cash'?draftCashBatchPart(original):original.kind==='settlement.draft-free'?draftFreeBatchPart(original):original.kind==='payment.draft-noncash'?draftNoncashBatchPart(original):original;
   const p=change.payload as {data?:{orderId:string;expectedDraftRevision:number;mappings:{skuId:string;groupId:string;revision:number}[];groups:{groupId:string;balance:number;revision:number}[]};metadata?:Record<string,unknown>};
@@ -290,6 +300,10 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='draft-cancellation') {
+    if(v.revision!==0 || v.change.kind!=='draft.cancel' || key!==`draft-cancellation:${current.cancellation.orderId}`) throw new Error('Histori pembatalan draft tidak sah');
+    previous=current;continue;
+   }
    if(current.recordType==='free-cancellations') {
     const c=v.change,p=c.payload as {data:CancelFreeInput};
     if(c.kind!=='cancellation.free' || key!==freeCancellationKey(c.targetId) || !p?.data || p.data.expectedCancellationRevision!==(v.revision===0?null:v.revision-1) || current.cancellations.length!==v.revision+1 || (previous && (previous.recordType!=='free-cancellations' || canonical(current.cancellations.slice(0,-1))!==canonical(previous.cancellations)))) throw new Error('Histori pembatalan gratis tidak sah');

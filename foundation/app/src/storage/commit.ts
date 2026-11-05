@@ -30,7 +30,7 @@ async function commitInTransaction(db:BerrieDatabase, change:AtomicChange):Promi
  const payload=canonical(change);
   const existing=await db.receipts.get(change.operationId);
   if(existing) { if(existing.payload!==payload) throw new Error('Konflik operation ID'); return existing.result; }
-  if(change.kind==='draft.create' || change.kind==='draft.update' || change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='settlement.confirmed-free' || change.kind==='payment.draft-noncash' || change.kind==='payment.confirmed-noncash' || change.kind==='serving.serve' || change.kind==='serving.correct') {
+  if(change.kind==='draft.cancel' || change.kind==='draft.create' || change.kind==='draft.update' || change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='settlement.confirmed-free' || change.kind==='payment.draft-noncash' || change.kind==='payment.confirmed-noncash' || change.kind==='serving.serve' || change.kind==='serving.correct') {
    const p=change.payload as {contractVersion?:unknown;sessionSource?:{id?:unknown;revision?:unknown}};
    if(p?.contractVersion!==2 || typeof p.sessionSource?.id!=='string' || !positive(p.sessionSource.revision,0)) throw new Error('Kontrak sesi kas wajib');
    const session=await db.state.get(`cash-session:${p.sessionSource.id}`);
