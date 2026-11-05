@@ -1,8 +1,9 @@
 import { correctionDeltas, validateMethodCorrection, type MethodCorrection } from './payment';
 import { draftDateCode } from './draft';
+import { validateServedRefundEvent, type ServedRefundEvent } from './served-refund';
 
 export interface CashSession { id:string; storeId:string; number:string; openedBy:string; initialCustodian:string; openedAt:string; timeZone:string; businessDate:string; openingAmount:number }
-export type CashMovement = { kind:'opening'|'in'|'out'|'sale'; sessionId:string; storeId:string; amount:number; category:string; description:string } | { kind:'method-correction'; sessionId:string; storeId:string; correction:MethodCorrection; legs:ReturnType<typeof correctionDeltas> };
+export type CashMovement = { kind:'opening'|'in'|'out'|'sale'; sessionId:string; storeId:string; amount:number; category:string; description:string } | { kind:'method-correction'; sessionId:string; storeId:string; correction:MethodCorrection; legs:ReturnType<typeof correctionDeltas> } | {kind:'refund';sessionId:string;storeId:string;refund:ServedRefundEvent};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function text(v:unknown):v is string { return typeof v==='string' && !!v.trim() && v.length<=200; }
 export function businessDate(time:string, zone:string):string {
@@ -21,6 +22,14 @@ export function cashBalance(entries:CashMovement[], session:CashSession):number 
  if(!Array.isArray(entries) || !entries.length) throw new Error('Ledger kas kosong');
  let balance=0;
  entries.forEach((e,i)=>{
+  if(e?.kind==='refund') {
+   if(i===0 || Object.keys(e).sort().join(',')!=='kind,refund,sessionId,storeId' || e.sessionId!==session.id || e.storeId!==session.storeId) throw new Error('Ledger refund tidak sah');
+   validateServedRefundEvent(e.refund);
+   if(e.refund.cashSessionId!==session.id || e.refund.storeId!==session.storeId) throw new Error('Sesi refund tidak sesuai');
+   if(e.refund.method==='cash') balance-=e.refund.amount;
+   if(!Number.isSafeInteger(balance) || balance<0) throw new Error('Saldo kas tidak sah');
+   return;
+  }
   if(e?.kind==='method-correction') {
    if(i===0 || Object.keys(e).sort().join(',')!=='correction,kind,legs,sessionId,storeId' || e.sessionId!==session.id || e.storeId!==session.storeId) throw new Error('Ledger koreksi tidak sah');
    validateMethodCorrection(e.correction);
