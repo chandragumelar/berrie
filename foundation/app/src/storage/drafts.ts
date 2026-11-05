@@ -34,6 +34,7 @@ function save(db:BerrieDatabase, input:unknown, metadata:DraftMetadata, expected
    if((change.kind!=='draft.create' && change.kind!=='draft.update') || canonical({data:payload.data,metadata:payload.metadata,expectedRevision:payload.expectedRevision})!==canonical(intent)) throw new Error('Konflik operation ID');
    return existing.result;
   }
+  if(await db.state.get(`draft-cancellation:${candidate.draft.orderId}`)) throw new Error('Draft sudah dibatalkan');
   const committedAt=now();const day=draftDateCode(committedAt,meta.storeTimeZone);candidate.draft.savedAt=committedAt;
   const row=await db.state.get(key(candidate.draft.orderId));
   if((row?.revision ?? null)!==expectedRevision) throw new Error('Revisi berubah');
@@ -64,5 +65,5 @@ function save(db:BerrieDatabase, input:unknown, metadata:DraftMetadata, expected
 export function createDraft(db:BerrieDatabase,data:unknown,metadata:DraftMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> {return save(db,data,metadata,null,locks,now);}
 export function updateDraft(db:BerrieDatabase,data:unknown,metadata:DraftMetadata,expectedRevision:number,locks?:LockProvider,now?:()=>string):Promise<unknown> {if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0) throw new Error('Revisi tidak sah');return save(db,data,metadata,expectedRevision,locks,now);}
 export async function readDraft(db:BerrieDatabase,orderId:string):Promise<{draft:DraftRecord['draft'];revision:number}|undefined> {
- if(typeof orderId!=='string'||!orderId.trim()) throw new Error('ID tidak sah');return db.transaction('r',db.state,async()=>{if(await db.state.get(`first-batch:${orderId}`)) throw new Error('Draft sudah dikonfirmasi');const row=await db.state.get(key(orderId));if(!row)return undefined;const found=record(row.value);if(found.draft.orderId!==orderId) throw new Error('Identitas draft tidak sesuai');return {draft:found.draft,revision:row.revision};});
+ if(typeof orderId!=='string'||!orderId.trim()) throw new Error('ID tidak sah');return db.transaction('r',db.state,async()=>{if(await db.state.get(`draft-cancellation:${orderId}`)) throw new Error('Draft sudah dibatalkan');if(await db.state.get(`first-batch:${orderId}`)) throw new Error('Draft sudah dikonfirmasi');const row=await db.state.get(key(orderId));if(!row)return undefined;const found=record(row.value);if(found.draft.orderId!==orderId) throw new Error('Identitas draft tidak sesuai');return {draft:found.draft,revision:row.revision};});
 }
