@@ -1,4 +1,5 @@
 import { cancellationKey, makePaidCancellationChange, makeRefundDueChange, makeCancelRefundChange, makeCancelledReturnChange, type CancelPaidInput, type RefundDueInput, type CancelRefundInput, type ReturnCancelledInput } from './paid-cancellations';
+import { freeCancellationKey, freeReturnKey, makeFreeCancellationChange, makeFreeReturnChange, type CancelFreeInput, type ReturnFreeInput } from './free-cancellations';
 import { correctionKey, makePaymentCorrectionChange, type CorrectPaymentMethodInput } from './payment-correction';
 import { makeServedRefundChange, makeStockReturnChange, refundKey, returnKey, type RefundSources, type ServedRefundInput, type ReturnRefundInput } from './served-refunds';
 import { combineDraftFreeChange, draftFreeBatchPart, makeConfirmedFreeChange, type ConfirmedFreeInput, type DraftFreeInput, type FreeSessionSource } from './free-settlement';
@@ -44,6 +45,32 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const change of changes) {const key=JSON.stringify([change.storeId,change.deviceId,change.deviceEpoch]);const stream=streams.get(key) ?? [];stream.push(change);streams.set(key,stream);}
  for(const stream of streams.values()) {stream.sort((a,b)=>a.localSequence-b.localSequence);for(let i=1;i<stream.length;i++)edge(stream[i-1].operationId,stream[i].operationId);}
  const stateByKey=new Map(state.map(row=>[row.key,row]));
+ // Reconstruct free cancellation and return solely from their referenced history.
+ for(const change of changes.filter(c=>c.kind==='cancellation.free' || c.kind==='return.free')) {
+  const p=change.payload as {data:CancelFreeInput|ReturnFreeInput;metadata:StockMetadata;contractVersion:number};
+  if(!p?.data || !p.metadata || p.contractVersion!==1 || p.data.orderId!==change.targetId) throw new Error('Kontrak pembatalan gratis tidak sah');
+  const version=(key:string,revision:number|null,type:BusinessRecord['recordType'])=>{
+   const versions=byKey.get(key) ?? [],source=revision===null?undefined:versions.find(v=>v.revision===revision),record=typed(source?.value);
+   if(revision!==null && (!source || source.change.storeId!==change.storeId || record?.recordType!==type)) throw new Error('Sumber gratis tidak sah');
+   if(source) edge(source.change.operationId,change.operationId);
+   const next=versions.find(v=>v.revision===(revision ?? -1)+1);if(next) edge(change.operationId,next.change.operationId);
+   return record;
+  };
+  const d=p.data,order=change.targetId,batch=version(`first-batch:${order}`,0,'first-batch'),settlement=version(`settlement:${order}`,0,'settlement');
+  const batchSource=byKey.get(`first-batch:${order}`)?.find(v=>v.revision===0),settlementSource=byKey.get(`settlement:${order}`)?.find(v=>v.revision===0);
+  if(batch?.recordType!=='first-batch' || settlement?.recordType!=='settlement' || !batchSource || !['batch.confirm-first','settlement.draft-free'].includes(batchSource.change.kind) || !settlementSource || !['settlement.confirmed-free','settlement.draft-free'].includes(settlementSource.change.kind) || ['payment:','paid-cancellations:','served-refunds:','stock-returns:'].some(prefix=>byKey.has(`${prefix}${order}`))) throw new Error('Sumber settlement gratis tidak sah');
+  const serving=version(`serving:${order}`,d.expectedServingRevision,'serving'),session=version(`cash-session:${batch.batch.draft.cashSessionId}`,d.expectedSessionRevision,'cash-session'),cancellations=version(freeCancellationKey(order),d.expectedCancellationRevision,'free-cancellations');
+  const option=change.kind==='cancellation.free'?(d as CancelFreeInput).returnStock:null;
+  if(change.kind==='cancellation.free' && option!==null && (!option || !Array.isArray(option.groups))) throw new Error('Opsi return gratis tidak sah');
+  const returnRevision=change.kind==='return.free'?(d as ReturnFreeInput).expectedReturnRevision:option?.expectedReturnRevision;
+  const returns=returnRevision===undefined?undefined:version(freeReturnKey(order),returnRevision,'free-stock-returns');
+  const groupSources=change.kind==='return.free'?(d as ReturnFreeInput).groups:option?.groups ?? [];
+  if((serving && serving.recordType!=='serving') || session?.recordType!=='cash-session' || (cancellations && cancellations.recordType!=='free-cancellations') || (returns && returns.recordType!=='free-stock-returns') || !Array.isArray(groupSources)) throw new Error('Histori gratis tidak sah');
+  const groups=groupSources.map(g=>{const r=version(`stock-group:${g.groupId}`,g.revision,'stock-group');if(r?.recordType!=='stock-group') throw new Error('Sumber stok tidak sah');return r.stockGroup;});
+  const sources={batch:batch.batch,settlement:settlement.settlement,session:session.session,serving:serving?.serving ?? null,cancellations:cancellations?.cancellations ?? [],returns:returns?.returns ?? [],groups};
+  const expected=change.kind==='cancellation.free'?makeFreeCancellationChange(sources,d as CancelFreeInput,p.metadata):makeFreeReturnChange(sources,d as ReturnFreeInput,p.metadata);
+  if(canonical(change)!==canonical(expected)) throw new Error('Efek gratis tidak sesuai sumber');
+ }
  // Reconstruct each new operation exclusively from referenced historical revisions.
  // A cancellation binds every read revision, including state that it does not update.
  for(const change of changes.filter(c=>c.kind==='cancellation.paid')) {
@@ -263,6 +290,17 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='free-cancellations') {
+    const c=v.change,p=c.payload as {data:CancelFreeInput};
+    if(c.kind!=='cancellation.free' || key!==freeCancellationKey(c.targetId) || !p?.data || p.data.expectedCancellationRevision!==(v.revision===0?null:v.revision-1) || current.cancellations.length!==v.revision+1 || (previous && (previous.recordType!=='free-cancellations' || canonical(current.cancellations.slice(0,-1))!==canonical(previous.cancellations)))) throw new Error('Histori pembatalan gratis tidak sah');
+    previous=current;continue;
+   }
+   if(current.recordType==='free-stock-returns') {
+    const c=v.change,p=c.payload as {data:CancelFreeInput|ReturnFreeInput};
+    const rev=c.kind==='cancellation.free'?(p?.data as CancelFreeInput)?.returnStock?.expectedReturnRevision:(p?.data as ReturnFreeInput)?.expectedReturnRevision;
+    if(!['cancellation.free','return.free'].includes(c.kind) || key!==freeReturnKey(c.targetId) || rev!==(v.revision===0?null:v.revision-1) || current.returns.length!==v.revision+1 || (previous && (previous.recordType!=='free-stock-returns' || canonical(current.returns.slice(0,-1))!==canonical(previous.returns)))) throw new Error('Histori return gratis tidak sah');
+    previous=current;continue;
+   }
    if(current.recordType==='paid-cancellations') {
     const c=v.change,p=c.payload as {data:CancelPaidInput};
     if(!['cancellation.paid','cancellation.refund-paid'].includes(c.kind) || key!==cancellationKey(c.targetId) || !p?.data || p.data.expectedCancellationRevision!==(v.revision===0?null:v.revision-1) || current.cancellations.length!==v.revision+1 || (previous && (previous.recordType!=='paid-cancellations' || canonical(current.cancellations.slice(0,-1))!==canonical(previous.cancellations)))) throw new Error('Histori pembatalan tidak sah');
@@ -291,7 +329,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     previous=current;continue;
    }
    if(current.recordType==='serving') {
-    if(['cancellation.paid','cancellation.refund-paid'].includes(v.change.kind)) { if(key!==`serving:${v.change.targetId}` || current.schemaVersion!==2) throw new Error('Penyajian pembatalan tidak sah');previous=current;continue; }
+    if(['cancellation.paid','cancellation.refund-paid','cancellation.free'].includes(v.change.kind)) { if(key!==`serving:${v.change.targetId}` || current.schemaVersion!==2) throw new Error('Penyajian pembatalan tidak sah');previous=current;continue; }
     const c=v.change,p=c.payload as {data:ServingInput;metadata:StockMetadata;contractVersion:number;sessionSource:SessionSource;refundRevision?:number|null},action=c.kind==='serving.serve'?'serve':c.kind==='serving.correct'?'correct':null;
     const source=byKey.get(`first-batch:${current.serving.orderId}`)?.find(x=>x.revision===0),batch=typed(source?.value);
     if(!action || !p?.data || !p.metadata || !source || batch?.recordType!=='first-batch' || source.change.storeId!==owner || key!==`serving:${current.serving.orderId}` || p.data.expectedRevision!==(v.revision===0?null:v.revision-1)) throw new Error('Histori penyajian tidak sah');
@@ -328,7 +366,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    }
    if(current.recordType==='stock-group') {
     const g=current.stockGroup, change=v.change, prev=previous?.recordType==='stock-group'?previous.stockGroup:null;
-    if(change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='payment.draft-noncash' || change.kind==='refund.served' || change.kind==='refund.return-stock' || change.kind==='cancellation.paid' || change.kind==='refund.cancelled' || change.kind==='cancellation.refund-paid' || change.kind==='cancellation.return-stock') {if(!prev) throw new Error('Stok tanpa sumber');previous=current;continue;}
+    if(change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='payment.draft-noncash' || change.kind==='refund.served' || change.kind==='refund.return-stock' || change.kind==='cancellation.paid' || change.kind==='refund.cancelled' || change.kind==='cancellation.refund-paid' || change.kind==='cancellation.return-stock' || change.kind==='cancellation.free' || change.kind==='return.free') {if(!prev) throw new Error('Stok tanpa sumber');previous=current;continue;}
     const action=v.revision===0?'opening':change.kind==='stock.correction'?'correction':change.kind==='stock.minimum'?'minimum':null;
     const p=change.payload as {action?:unknown;data?:Record<string,unknown>;metadata?:Record<string,unknown>} | null;
     const data=p?.data, meta=p?.metadata;

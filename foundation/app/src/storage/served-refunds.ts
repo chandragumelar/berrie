@@ -29,24 +29,29 @@ function sourceChecks(s:RefundSources,orderId:string,meta:StockMetadata):void {
  for(const r of s.returns) {validateStockReturnEvent(r,true);if(r.orderId!==orderId || r.storeId!==meta.storeId || r.paymentId!==s.payment.id) throw new Error('Histori return asing');}
 }
 export function returnEffects(s:Pick<RefundSources,'batch'|'returns'|'groups'>, source:ServedRefundEvent|import('../domain/paid-cancellation').PaidCancellationEvent, unitIds:string[], option:ReturnOption, meta:StockMetadata) {
- if(!option || Object.keys(option).sort().join(',')!=='expectedReturnRevision,groups,reason,sellable' || option.sellable!==true || !text(option.reason) || !validRevision(option.expectedReturnRevision,true) || (option.expectedReturnRevision===null)!==(s.returns.length===0) || option.expectedReturnRevision!== (s.returns.length?s.returns.length-1:null) || !Array.isArray(unitIds) || !unitIds.length || unitIds.some(id=>!text(id,200)) || new Set(unitIds).size!==unitIds.length || !Array.isArray(option.groups)) throw new Error('Pilihan return tidak sah');
- const already=new Set(s.returns.flatMap(r=>r.units.map(u=>u.id))), eligible=new Set(source.units.map(u=>u.id));
+ const {units,state,groupIds}=planStockReturn(s.batch,s.returns.flatMap(r=>r.units.map(u=>u.id)),s.groups,source.units.map(u=>u.id),unitIds,option,meta,s.returns.length);
+ const event:StockReturnEvent={id:`return:${meta.operationId}`,...('kitchenConfirmed' in source?{cancellationId:source.id}:{refundId:source.id}),paymentId:source.paymentId,orderId:source.orderId,storeId:source.storeId,units,reason:option.reason,actorId:meta.actorId,recordedAt:meta.recordedAt,sellable:true};validateStockReturnEvent(event,true);
+ const ledger=groupIds.map(groupId=>({id:`return-ledger:${meta.operationId}:${groupId}`,operationId:meta.operationId,value:{kind:'stock-return',event,groupId,delta:units.filter(u=>u.groupId===groupId).length}}));
+ return {event,state,ledger};
+}
+/** Shared physical stock planning; event identity and authorization stay with each caller. */
+export function planStockReturn(batch:FirstBatch,alreadyReturned:string[],groups:StockGroup[],eligibleIds:string[],unitIds:string[],option:ReturnOption,meta:StockMetadata,returnCount:number) {
+ if(!option || Object.keys(option).sort().join(',')!=='expectedReturnRevision,groups,reason,sellable' || option.sellable!==true || !text(option.reason) || !validRevision(option.expectedReturnRevision,true) || option.expectedReturnRevision!== (returnCount?returnCount-1:null) || !Array.isArray(unitIds) || !unitIds.length || unitIds.some(id=>!text(id,200)) || new Set(unitIds).size!==unitIds.length || !Array.isArray(option.groups)) throw new Error('Pilihan return tidak sah');
+ const already=new Set(alreadyReturned), eligible=new Set(eligibleIds);
  const units=unitIds.map(id=>{
   if(!eligible.has(id) || already.has(id)) throw new Error('Unit return tidak tersedia');
-  const item=s.batch.draft.items.find(i=>i.unitIds.includes(id)), mapping=s.batch.skuGroups.find(m=>m.skuId===item?.skuId);
+  const item=batch.draft.items.find(i=>i.unitIds.includes(id)), mapping=batch.skuGroups.find(m=>m.skuId===item?.skuId);
   if(!item || !mapping) throw new Error('Grup asal tidak ditemukan');
   return {id,groupId:mapping.groupId};
  });
  const groupIds=[...new Set(units.map(u=>u.groupId))].sort();
- if(option.groups.length!==groupIds.length || s.groups.length!==groupIds.length || new Set(option.groups.map(g=>g.groupId)).size!==groupIds.length) throw new Error('Sumber grup return tidak lengkap');
+ if(option.groups.length!==groupIds.length || groups.length!==groupIds.length || new Set(option.groups.map(g=>g.groupId)).size!==groupIds.length) throw new Error('Sumber grup return tidak lengkap');
  const state=groupIds.map(groupId=>{
-  const source=option.groups.find(g=>g.groupId===groupId),group=s.groups.find(g=>g.groupId===groupId),qty=units.filter(u=>u.groupId===groupId).length;
+  const source=option.groups.find(g=>g.groupId===groupId),group=groups.find(g=>g.groupId===groupId),qty=units.filter(u=>u.groupId===groupId).length;
   if(!source || Object.keys(source).sort().join(',')!=='balance,groupId,revision' || !validRevision(source.revision) || !Number.isSafeInteger(source.balance) || !group || group.storeId!==meta.storeId || source.balance!==group.balance || !Number.isSafeInteger(group.balance+qty)) throw new Error('Sumber grup return berubah');
   return {key:`stock-group:${groupId}`,expectedRevision:source.revision,value:{recordType:'stock-group',schemaVersion:1,stockGroup:{...group,balance:group.balance+qty}}};
  });
- const event:StockReturnEvent={id:`return:${meta.operationId}`,...('kitchenConfirmed' in source?{cancellationId:source.id}:{refundId:source.id}),paymentId:source.paymentId,orderId:source.orderId,storeId:source.storeId,units,reason:option.reason,actorId:meta.actorId,recordedAt:meta.recordedAt,sellable:true};validateStockReturnEvent(event,true);
- const ledger=groupIds.map(groupId=>({id:`return-ledger:${meta.operationId}:${groupId}`,operationId:meta.operationId,value:{kind:'stock-return',event,groupId,delta:units.filter(u=>u.groupId===groupId).length}}));
- return {event,state,ledger};
+ return {units,state,groupIds};
 }
 /** Deterministic operation, reconstructed from historical revisions by validateTransitions. */
 export function makeServedRefundChange(s:RefundSources,data:ServedRefundInput,meta:StockMetadata):AtomicChange {
