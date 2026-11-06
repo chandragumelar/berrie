@@ -51,3 +51,39 @@ export async function readEffectivePayment(db:BerrieDatabase,storeId:string,orde
  const corrections=h?.recordType==='payment-corrections'?h.corrections:[];
  return structuredClone({payment:record.payment,method:effectivePaymentMethod(record.payment,corrections),corrections,revision:row?.revision ?? null});
 }
+
+/** Administrative reclassification against an immutable, closed source session. */
+export interface AdjustClosedPaymentInput {
+ orderId:string; expectedRevision:number|null; sourceSessionId:string; expectedSourceRevision:number;
+ executionSessionId:string; expectedSessionRevision:number; method:PaymentMethod; reason:string; evidenceReference:string;
+}
+export function makeClosedPaymentAdjustmentChange(payment:Payment, source:CashSession, session:CashSession, history:MethodCorrection[], data:AdjustClosedPaymentInput, meta:StockMetadata, before:number):AtomicChange {
+ if(!data || Object.keys(data).sort().join(',')!=='evidenceReference,executionSessionId,expectedRevision,expectedSessionRevision,expectedSourceRevision,method,orderId,reason,sourceSessionId' || data.orderId!==payment.orderId || data.expectedRevision!==(history.length?history.length-1:null) || !Number.isSafeInteger(data.expectedSessionRevision) || data.expectedSessionRevision<0 || !Number.isSafeInteger(data.expectedSourceRevision) || data.expectedSourceRevision<0 || source.id!==payment.cashSessionId || data.sourceSessionId!==source.id || data.executionSessionId!==session.id || source.id===session.id || source.storeId!==payment.storeId || session.storeId!==payment.storeId || meta.storeId!==payment.storeId || !Number.isSafeInteger(before) || before<0) throw new Error('Sumber penyesuaian tidak sah');
+ const correction:MethodCorrection={paymentId:payment.id,orderId:payment.orderId,storeId:payment.storeId,cashSessionId:source.id,executionSessionId:session.id,evidenceReference:data.evidenceReference,from:effectivePaymentMethod(payment,history),to:data.method,amount:payment.amount,reason:data.reason,actorId:meta.actorId,recordedAt:meta.recordedAt};
+ validateMethodCorrection(correction);
+ const legs=correctionDeltas(correction),balance=before+legs.reduce((sum,leg)=>sum+(leg.method==='cash'?leg.delta:0),0);
+ if(!Number.isSafeInteger(balance) || balance<0) throw new Error('Saldo kas tidak sah');
+ const operationId=meta.operationId;
+ return {operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:'payment.adjust-closed-method',targetId:payment.orderId,payload:{data,metadata:meta,contractVersion:1,paymentSource:{id:payment.id,revision:0},sourceSession:{id:source.id,revision:data.expectedSourceRevision},sessionSource:{id:session.id,revision:data.expectedSessionRevision}},state:[{key:correctionKey(payment.orderId),expectedRevision:data.expectedRevision,value:{recordType:'payment-corrections',schemaVersion:1,corrections:[...history,correction]}},{key:`cash-session:${session.id}`,expectedRevision:data.expectedSessionRevision,value:{recordType:'cash-session',schemaVersion:1,session}}],ledger:[{id:`adjustment-ledger:${operationId}`,operationId,value:{kind:'method-adjustment',sessionId:session.id,storeId:session.storeId,correction,legs}}],audit:[{id:`adjustment-audit:${operationId}`,operationId,value:{correction,actorId:meta.actorId,policyVersion:meta.policyVersion,before,after:balance}}],outbox:{id:`adjustment-outbox:${operationId}`,operationId,value:{orderId:payment.orderId,paymentId:payment.id}},result:{correction,revision:history.length,balance,sessionRevision:data.expectedSessionRevision+1}};
+}
+/** Internal only; metadata and evidence reference do not authorize this operation. */
+export function adjustClosedPaymentMethod(db:BerrieDatabase,input:AdjustClosedPaymentInput,metadata:StockMetadata,locks:LockProvider=navigator.locks):Promise<unknown> {
+ const data=copyInput(input) as AdjustClosedPaymentInput,meta=copyInput(metadata) as StockMetadata,intent={data,metadata:meta};canonical(intent);
+ return withWriterTransaction(db,locks,async commit=>{
+  const prior=await db.receipts.get(meta.operationId);
+  if(prior) {const c=JSON.parse(prior.payload) as AtomicChange,p=c.payload as typeof intent;if(c.kind!=='payment.adjust-closed-method' || canonical({data:p.data,metadata:p.metadata})!==canonical(intent)) throw new Error('Konflik operation ID');return prior.result;}
+  const snapshot=await checkpoint(db);validateCheckpoint(snapshot);
+  const get=(key:string)=>snapshot.state.find(r=>r.key===key);
+  const paymentRow=get(`payment:${data.orderId}`),payment=paymentRow?.value as BusinessRecord;
+  const batchRow=get(`first-batch:${data.orderId}`),batch=batchRow?.value as BusinessRecord;
+  const sourceRow=get(`cash-session:${data.sourceSessionId}`),source=sourceRow?.value as BusinessRecord;
+  const sessionRow=get(`cash-session:${data.executionSessionId}`),session=sessionRow?.value as BusinessRecord;
+  const count=get(`cash-count:${data.sourceSessionId}`)?.value as BusinessRecord;
+  const historyRow=get(correctionKey(data.orderId)),history=historyRow?.value as BusinessRecord;
+  if(!paymentRow || paymentRow.revision!==0 || payment?.recordType!=='payment' || !batchRow || batchRow.revision!==0 || batch?.recordType!=='first-batch' || batch.batch.draft.channel!=='store' || batch.batch.draft.orderId!==data.orderId || batch.batch.draft.cashSessionId!==payment.payment.cashSessionId || batch.batch.storeId!==payment.payment.storeId || !sourceRow || sourceRow.revision!==data.expectedSourceRevision || source?.recordType!=='cash-session' || count?.recordType!=='cash-count' || count.history.events.at(-1)?.action!=='close' || !sessionRow || sessionRow.revision!==data.expectedSessionRevision || session?.recordType!=='cash-session' || (historyRow?.revision ?? null)!==data.expectedRevision || (historyRow && history?.recordType!=='payment-corrections')) throw new Error('Sumber penyesuaian berubah');
+  const changes=snapshot.receipts.map(r=>JSON.parse(r.payload) as AtomicChange),paymentChange=changes.find(c=>c.state.some(s=>s.key===`payment:${data.orderId}` && s.expectedRevision===null));
+  if(!paymentChange || !['payment.confirmed-cash','payment.draft-cash','payment.confirmed-noncash','payment.draft-noncash'].includes(paymentChange.kind)) throw new Error('Jenis Payment tidak didukung');
+  const before=cashBalance(cashMovements(changes,session.session.id),session.session);
+  return commit(makeClosedPaymentAdjustmentChange(payment.payment,source.session,session.session,history?.recordType==='payment-corrections'?history.corrections:[],data,meta,before));
+ });
+}
