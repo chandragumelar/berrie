@@ -1,3 +1,4 @@
+import { assertSessionWritable, isCashCountChange } from './cash-count-history';
 import { validateBusinessRecord } from '../domain/business-record';
 import { BerrieDatabase, type EventRow } from './database';
 import { validateTransitions } from './transitions';
@@ -49,6 +50,12 @@ async function commitInTransaction(db:BerrieDatabase, change:AtomicChange):Promi
    }
   }
   const currentState=await db.state.toArray();
+  assertSessionWritable(change,currentState);
+  if(isCashCountChange(change)) {
+   const boundary=(change.payload as {boundary?:unknown}).boundary;
+   const actual=(await db.sequences.toArray()).map(s=>({key:s.key,sequence:s.sequence})).sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:0);
+   if(canonical(boundary)!==canonical(actual)) throw new Error('Batas event berubah');
+  }
   const projected=currentState.filter(row=>!change.state.some(next=>next.key===row.key));
   projected.push(...change.state.map(row=>({key:row.key,revision:(row.expectedRevision ?? -1)+1,value:row.value})));
   validateTransitions([...(await db.receipts.toArray()),{id:change.operationId,payload,result:change.result}],projected);

@@ -82,9 +82,9 @@ async function snapshot(db:BerrieDatabase) {return validateCheckpoint(await chec
 export async function readOrderOperationalStatus(db:BerrieDatabase,storeId:string,orderId:string):Promise<OrderStatusRead> {
  assertId(storeId);assertId(orderId);const s=await snapshot(db);return structuredClone(read(s,changes(s),storeId,orderId));
 }
-/** Empty blockers are not authorization to close; the future close command must revalidate atomically. */
-export async function readSessionCloseBlockers(db:BerrieDatabase,storeId:string,sessionId:string):Promise<SessionBlockersRead> {
- assertId(storeId);assertId(sessionId);const s=await snapshot(db),cs=changes(s),session=typed(s,`cash-session:${sessionId}`,'cash-session');
+/** Reduce a validated transaction snapshot; callers are responsible for validation and authorization. */
+export function sessionCloseBlockers(s:Snapshot,storeId:string,sessionId:string):SessionBlockersRead {
+ assertId(storeId);assertId(sessionId);const cs=changes(s),session=typed(s,`cash-session:${sessionId}`,'cash-session');
  if(!session || session.recordType!=='cash-session' || session.session.storeId!==storeId || session.session.id!==sessionId) throw new Error('Sesi tidak ditemukan');
  const ids=new Set<string>();const incomplete:IncompleteSource[]=[];
  for(const r of s.state) {
@@ -102,4 +102,9 @@ export async function readSessionCloseBlockers(db:BerrieDatabase,storeId:string,
  blockers.sort((a,b)=>a.displayNumber.localeCompare(b.displayNumber) || a.orderId.localeCompare(b.orderId));
  incomplete.sort((a,b)=>a.key.localeCompare(b.key) || a.reason.localeCompare(b.reason));
  return structuredClone({blockers,incomplete:incomplete.filter((v,i)=>i===0 || v.key!==incomplete[i-1].key || v.reason!==incomplete[i-1].reason)});
+}
+
+/** Internal read only; an empty result is not authorization to close. */
+export async function readSessionCloseBlockers(db:BerrieDatabase,storeId:string,sessionId:string):Promise<SessionBlockersRead> {
+ return sessionCloseBlockers(await snapshot(db),storeId,sessionId);
 }

@@ -83,3 +83,48 @@ it('reports generic order sources and never treats them as a safe empty list',as
  const {commitChange}=await import('./commit');const {d}=await setup(db);const op='legacy';await commitChange(db,{operationId:op,storeId:'store',deviceId:'legacy',deviceEpoch:1,localSequence:1,kind:'legacy',targetId:'unknown',actorId:'actor',policyVersion:1,payload:{},state:[{key:'order:unknown',expectedRevision:null,value:{old:true}}],ledger:[],audit:[{id:'legacy-audit',operationId:op,value:{}}],outbox:{id:'legacy-outbox',operationId:op,value:{}},result:{}},locks);
  const before=await checkpoint(db);expect((await readSessionCloseBlockers(db,'store',d.cashSessionId)).incomplete).toContainEqual({key:'order:unknown',reason:'Record generik belum didukung'});expect((await readOrderOperationalStatus(db,'store','unknown')).incomplete).toHaveLength(1);expect(await checkpoint(db)).toEqual(before);
  }finally{await db.delete();}});
+
+it('count rejects draft, processed, unpaid, paid-unserved and refund due; cancellation releases service',async()=>{const db=new BerrieDatabase(crypto.randomUUID());try{
+ const {changeCashCount}=await import('./cash-count'),{cancelPaidUnits,refundCancelledUnits}=await import('./paid-cancellations');
+ const {d,input}=await setup(db), count=(revision:number,countRevision:number|null)=>({sessionId:d.cashSessionId,expectedSessionRevision:revision,expectedCountRevision:countRevision,amount:0});
+ await expect(changeCashCount(db,'save',count(0,null),meta('count',4),locks)).rejects.toThrow();
+ await confirmFirstBatch(db,input,meta('batch',4),locks,now);
+ await expect(changeCashCount(db,'save',count(0,null),meta('count',5),locks)).rejects.toThrow();
+ await payConfirmedFirstBatchCash(db,{orderId:d.orderId,expectedBatchRevision:0,expectedSessionRevision:0,received:30000},meta('pay',5),locks);
+ await expect(changeCashCount(db,'save',count(1,null),meta('count',6),locks)).rejects.toThrow();
+ await cancelPaidUnits(db,{orderId:d.orderId,expectedServingRevision:null,expectedCancellationRevision:null,expectedRefundRevision:null,expectedSessionRevision:1,selection:[{itemId:d.items[0].id,quantity:2}],reason:'Batal',kitchenConfirmed:true,returnStock:null},meta('cancel',6),locks);
+ await expect(changeCashCount(db,'save',count(1,null),meta('count',7),locks)).rejects.toThrow();
+ await refundCancelledUnits(db,{orderId:d.orderId,expectedServingRevision:0,expectedCancellationRevision:0,expectedRefundRevision:null,expectedCorrectionRevision:null,expectedSessionRevision:1,selection:[{itemId:d.items[0].id,quantity:2}],method:null,reason:'Kembali',moneyReturned:true,returnStock:null},meta('refund',7),locks);
+ await changeCashCount(db,'save',count(2,null),meta('count',8),locks);
+ await expect(refundCancelledUnits(db,{orderId:d.orderId,expectedServingRevision:0,expectedCancellationRevision:0,expectedRefundRevision:0,expectedCorrectionRevision:null,expectedSessionRevision:3,selection:[{itemId:d.items[0].id,quantity:1}],method:null,reason:'Kembali',moneyReturned:true,returnStock:null},meta('again',9),locks)).rejects.toThrow();
+ await changeCashCount(db,'cancel',{sessionId:d.cashSessionId,expectedSessionRevision:3,expectedCountRevision:0},meta('unfreeze',9),locks);
+ await changeCashCount(db,'save',count(4,1),meta('count2',10),locks);
+ const snapshot=await checkpoint(db);expect(snapshot.receipts.some(r=>r.id==='count2')).toBe(true);
+ }finally{await db.delete();}});
+
+it('count refuses incomplete platform and generic sources',async()=>{for(const platform of [true,false]) {const db=new BerrieDatabase(crypto.randomUUID());try{
+ const {changeCashCount}=await import('./cash-count');const d=draft();if(platform){d.channel='gofood';d.channelAccountId='00000000-0000-4000-8000-000000000010';d.externalOrderId='platform';}await setup(db,d);
+ if(!platform){const {commitChange}=await import('./commit');const op='legacy';await commitChange(db,{operationId:op,storeId:'store',deviceId:'legacy',deviceEpoch:1,localSequence:1,kind:'legacy',targetId:'unknown',actorId:'actor',policyVersion:1,payload:{},state:[{key:'order:unknown',expectedRevision:null,value:{old:true}}],ledger:[],audit:[{id:'legacy-audit',operationId:op,value:{}}],outbox:{id:'legacy-outbox',operationId:op,value:{}},result:{}},locks);}
+ const before=await checkpoint(db);await expect(changeCashCount(db,'save',{sessionId:d.cashSessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:0},meta('count',4),locks)).rejects.toThrow();expect(await checkpoint(db)).toEqual(before);
+ }finally{await db.delete();}}});
+
+it('served unpaid tetap blocker; hitungan ditolak tanpa mengubah checkpoint',async()=>{const db=new BerrieDatabase(crypto.randomUUID());try{
+ const {changeCashCount}=await import('./cash-count');const {d,input}=await setup(db);await confirmFirstBatch(db,input,meta('batch',4),locks,now);await serveUnits(db,{orderId:d.orderId,expectedRevision:null,unitIds:d.items[0].unitIds,reason:null},meta('serve',5),locks);
+ expect((await readSessionCloseBlockers(db,'store',d.cashSessionId)).blockers[0].reasons).toEqual(['unsettled']);const before=await checkpoint(db);await expect(changeCashCount(db,'save',{sessionId:d.cashSessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:0},meta('count',6),locks)).rejects.toThrow();expect(await checkpoint(db)).toEqual(before);
+ }finally{await db.delete();}});
+
+it('mutasi pesanan tanpa ledger ditahan saat hitungan dan sesi tertutup; replay lama tetap berhasil',async()=>{const db=new BerrieDatabase(crypto.randomUUID());try{
+ const {changeCashCount}=await import('./cash-count'),{correctServing}=await import('./serving'),{correctPaymentMethod}=await import('./payment-correction');const {d,input}=await setup(db);await confirmFirstBatch(db,input,meta('batch',4),locks,now);await payConfirmedFirstBatchCash(db,{orderId:d.orderId,expectedBatchRevision:0,expectedSessionRevision:0,received:30000},meta('pay',5),locks);
+ const serving={orderId:d.orderId,expectedRevision:null,unitIds:d.items[0].unitIds,reason:null};const served=await serveUnits(db,serving,meta('serve',6),locks);
+ await changeCashCount(db,'save',{sessionId:d.cashSessionId,expectedSessionRevision:1,expectedCountRevision:null,amount:27500},meta('count',7),locks);
+ const correction={orderId:d.orderId,expectedRevision:0,unitIds:d.items[0].unitIds,reason:'Salah catat'},before=await checkpoint(db);
+ await expect(correctServing(db,correction,meta('correction',8),locks)).rejects.toThrow();await expect(correctPaymentMethod(db,{orderId:d.orderId,expectedRevision:null,expectedSessionRevision:2,method:'qris',reason:'Salah'},meta('method',8),locks)).rejects.toThrow();expect(await serveUnits(db,serving,meta('serve',6),locks)).toEqual(served);expect(await checkpoint(db)).toEqual(before);
+ await changeCashCount(db,'close',{sessionId:d.cashSessionId,expectedSessionRevision:2,expectedCountRevision:0},meta('close',8),locks);
+ await expect(correctServing(db,correction,meta('correction',9),locks)).rejects.toThrow();await expect(correctPaymentMethod(db,{orderId:d.orderId,expectedRevision:null,expectedSessionRevision:3,method:'qris',reason:'Salah'},meta('method',9),locks)).rejects.toThrow();expect(await serveUnits(db,serving,meta('serve',6),locks)).toEqual(served);
+ }finally{await db.delete();}});
+
+it('staging menolak batas hitungan yang menyembunyikan penyelesaian blocker',async()=>{const db=new BerrieDatabase(crypto.randomUUID()),stage=new BerrieDatabase(crypto.randomUUID());try{
+ const {changeCashCount}=await import('./cash-count'),{canonical}=await import('./commit');const {d}=await setup(db);await cancelStoredDraft(db,{orderId:d.orderId,expectedRevision:0,reason:'Batal'},meta('cancel',4),locks);await changeCashCount(db,'save',{sessionId:d.cashSessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:0},meta('count',5),locks);
+ const original=await checkpoint(db),bad=structuredClone(original),receipt=bad.receipts.find(r=>r.id==='count')!,change=JSON.parse(receipt.payload),count=change.state.find((r:{key:string})=>r.key===`cash-count:${d.cashSessionId}`).value,event=count.history.events.at(-1);event.boundary.find((x:{key:string})=>x.key===JSON.stringify(['store','device',1])).sequence=3;change.payload.boundary=event.boundary;change.audit[0].value.event=event;change.result.event=event;receipt.payload=canonical(change);receipt.result=change.result;bad.state.find(r=>r.key===`cash-count:${d.cashSessionId}`)!.value=count;bad.audit.find(r=>r.operationId==='count')!.value=change.audit[0].value;
+ await expect(stageSnapshot(stage,bad)).rejects.toThrow();expect((await checkpoint(stage)).state).toEqual([]);expect(await checkpoint(db)).toEqual(original);
+ }finally{await db.delete();await stage.delete();}});

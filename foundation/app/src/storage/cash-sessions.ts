@@ -10,27 +10,31 @@ export type CashMetadata=StockMetadata;
 export interface OpenCashInput { sessionId:string; number:string; initialCustodian:string; openingAmount:number; timeZone:string }
 export interface MoveCashInput { sessionId:string; expectedRevision:number; kind:'in'|'out'; amount:number; category:string; description:string }
 const key=(id:string)=>`cash-session:${id}`;
-export function cashMovements(changes:AtomicChange[],id:string):CashMovement[] { return changes.filter(c=>(c.kind.startsWith('cash.') && c.targetId===id) || ((c.kind==='payment.confirmed-cash' || c.kind==='payment.draft-cash' || c.kind==='payment.correct-method' || c.kind==='refund.served' || c.kind==='refund.cancelled' || c.kind==='cancellation.refund-paid') && c.state.some(s=>s.key===key(id)))).sort((a,b)=>(a.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)-(b.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)).map(c=>c.ledger[0].value as CashMovement); }
-export function makeCashChange(session:CashSession, data:OpenCashInput|MoveCashInput, meta:CashMetadata, revision:number|null, before:number):AtomicChange {
+export function cashMovements(changes:AtomicChange[],id:string):CashMovement[] { return changes.filter(c=>((c.kind==='cash.open' || c.kind==='cash.move') && c.targetId===id) || ((c.kind==='payment.confirmed-cash' || c.kind==='payment.draft-cash' || c.kind==='payment.correct-method' || c.kind==='refund.served' || c.kind==='refund.cancelled' || c.kind==='cancellation.refund-paid') && c.state.some(s=>s.key===key(id)))).sort((a,b)=>(a.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)-(b.state.find(s=>s.key===key(id))!.expectedRevision ?? -1)).map(c=>c.ledger[0].value as CashMovement); }
+export function makeCashChange(session:CashSession, data:OpenCashInput|MoveCashInput, meta:CashMetadata, revision:number|null, before:number, previousClose?:string):AtomicChange {
  const opening=revision===null;
  const entry:Extract<CashMovement,{kind:'opening'|'in'|'out'|'sale'}>=opening?{kind:'opening',sessionId:session.id,storeId:session.storeId,amount:session.openingAmount,category:'',description:''}:{kind:(data as MoveCashInput).kind,sessionId:session.id,storeId:session.storeId,amount:(data as MoveCashInput).amount,category:(data as MoveCashInput).category,description:(data as MoveCashInput).description};
  const balance=opening?entry.amount:before+(entry.kind==='out'?-entry.amount:entry.amount);
  if(!Number.isSafeInteger(balance) || balance<0 || (!opening && (!Number.isSafeInteger(entry.amount) || entry.amount<=0 || !['in','out'].includes(entry.kind) || typeof entry.category!=='string' || !entry.category.trim() || entry.category.length>200 || typeof entry.description!=='string' || !entry.description.trim() || entry.description.length>200))) throw new Error('Pergerakan kas tidak sah');
  draftDateCode(meta.recordedAt,'UTC');
  const operationId=meta.operationId,action=opening?'open':'move';
- return {operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:`cash.${action}`,targetId:session.id,payload:{data,metadata:meta},state:[{key:key(session.id),expectedRevision:revision,value:{recordType:'cash-session',schemaVersion:1,session}}],ledger:[{id:`cash-ledger:${operationId}`,operationId,value:entry}],audit:[{id:`cash-audit:${operationId}`,operationId,value:{action,actorId:meta.actorId,policyVersion:meta.policyVersion,occurredAt:meta.recordedAt,sessionId:session.id,before,after:balance}}],outbox:{id:`cash-outbox:${operationId}`,operationId,value:{sessionId:session.id}},result:{sessionId:session.id,revision:(revision ?? -1)+1,balance}};
+ return {operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:`cash.${action}`,targetId:session.id,payload:previousClose?{data,metadata:meta,previousClose}:{data,metadata:meta},state:[{key:key(session.id),expectedRevision:revision,value:{recordType:'cash-session',schemaVersion:1,session}}],ledger:[{id:`cash-ledger:${operationId}`,operationId,value:entry}],audit:[{id:`cash-audit:${operationId}`,operationId,value:{action,actorId:meta.actorId,policyVersion:meta.policyVersion,occurredAt:meta.recordedAt,sessionId:session.id,before,after:balance}}],outbox:{id:`cash-outbox:${operationId}`,operationId,value:{sessionId:session.id}},result:{sessionId:session.id,revision:(revision ?? -1)+1,balance}};
 }
 async function save(db:BerrieDatabase, input:OpenCashInput|MoveCashInput, metadata:CashMetadata, opening:boolean, locks:LockProvider=navigator.locks):Promise<unknown> {
  const data=copyInput(input) as OpenCashInput|MoveCashInput,meta=copyInput(metadata) as CashMetadata; canonical({data,metadata:meta});
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
-  if(prior) {const c=JSON.parse(prior.payload) as AtomicChange;if(c.kind!==(opening?'cash.open':'cash.move') || canonical(c.payload)!==canonical({data,metadata:meta})) throw new Error('Konflik operation ID');return prior.result;}
+  if(prior) {const c=JSON.parse(prior.payload) as AtomicChange;const p=c.payload as {data:unknown;metadata:unknown};if(c.kind!==(opening?'cash.open':'cash.move') || canonical({data:p.data,metadata:p.metadata})!==canonical({data,metadata:meta})) throw new Error('Konflik operation ID');return prior.result;}
   const snapshot=await checkpoint(db);validateCheckpoint(snapshot);
   const changes=snapshot.receipts.map(r=>JSON.parse(r.payload) as AtomicChange);
   const row=await db.state.get(key(data.sessionId));
-  let session:CashSession,before=0;
+  let session:CashSession,before=0,previousClose:string|undefined;
   if(opening) {
-   if(row || snapshot.state.some(r=>{const v=r.value as {recordType?:string;session?:CashSession};return v?.recordType==='cash-session' && v.session?.storeId===meta.storeId;})) throw new Error('Sesi kas sudah terbuka');
+   if(row) throw new Error('ID sesi sudah dipakai');
+   const sessions=snapshot.state.filter(r=>{const v=r.value as {recordType?:string;session?:CashSession};return v?.recordType==='cash-session' && v.session?.storeId===meta.storeId;});
+   const closed=sessions.map(r=>{const v=r.value as {session:CashSession};const count=snapshot.state.find(x=>x.key===`cash-count:${v.session.id}`)?.value as {history?:{events:{action:string;operationId:string}[]}}|undefined;const event=count?.history?.events.at(-1);if(event?.action!=='close') throw new Error('Sesi kas sudah terbuka');return event.operationId;});
+   const referenced=new Set(changes.filter(c=>c.kind==='cash.open').map(c=>(c.payload as {previousClose?:string}).previousClose).filter(Boolean));
+   const heads=closed.filter(id=>!referenced.has(id));if(sessions.length && heads.length!==1) throw new Error('Rantai sesi tidak sah');previousClose=heads[0];
    const d=data as OpenCashInput, date=businessDate(meta.recordedAt,d.timeZone);
    session={id:d.sessionId,storeId:meta.storeId,number:d.number,openedBy:meta.actorId,initialCustodian:d.initialCustodian,openedAt:meta.recordedAt,timeZone:d.timeZone,businessDate:date,openingAmount:d.openingAmount};validateCashSession(session);
   } else {
@@ -38,7 +42,7 @@ async function save(db:BerrieDatabase, input:OpenCashInput|MoveCashInput, metada
    if(!row || record?.recordType!=='cash-session' || row.revision!==d.expectedRevision || !record.session || record.session.storeId!==meta.storeId || record.session.id!==d.sessionId) throw new Error('Sesi atau revisi tidak sesuai');
    session=record.session;before=cashBalance(cashMovements(changes,session.id),session);
   }
-  return commit(makeCashChange(session,data,meta,row?.revision ?? null,before));
+  return commit(makeCashChange(session,data,meta,row?.revision ?? null,before,previousClose));
  });
 }
 export function openCashSession(db:BerrieDatabase,data:OpenCashInput,meta:CashMetadata,locks?:LockProvider):Promise<unknown> {return save(db,data,meta,true,locks);}

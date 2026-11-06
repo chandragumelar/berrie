@@ -119,3 +119,12 @@ it('unit Rp0 dan settlement gratis tidak menghasilkan refund moneter',async()=>{
  const {input}=await setup(db,d);if(mode==='mixed')await payDraftCash(db,{...input,expectedSessionRevision:0,received:100},meta('pay',4),locks,now);else {const {settleDraftFree}=await import('./confirm-first-batch');await settleDraftFree(db,{...input,expectedSessionRevision:0,reason:'Gratis'},meta('pay',4),locks,now);}
  await serveUnits(db,{orderId:d.orderId,expectedRevision:null,unitIds:d.items.flatMap(i=>i.unitIds),reason:null},meta('serve',5),locks);const before=await checkpoint(db);await expect(refundServedUnits(db,refundInput(d),meta('refund',6),locks)).rejects.toThrow();expect(await checkpoint(db)).toEqual(before);
  }finally{await db.delete();}}});
+
+it('return sesudah hitungan dibatalkan mengikat revisi sesi baru dan tetap dapat direkonstruksi',async()=>{const db=new BerrieDatabase(crypto.randomUUID()),stage=new BerrieDatabase(crypto.randomUUID());try{
+ const {changeCashCount}=await import('./cash-count');const d=await paid(db),result=await refundServedUnits(db,refundInput(d),meta('refund',6),locks) as {refund:{id:string;units:{id:string}[]}};
+ await changeCashCount(db,'save',{sessionId:d.cashSessionId,expectedSessionRevision:2,expectedCountRevision:null,amount:13750},meta('count',7),locks);
+ const data={orderId:d.orderId,refundId:result.refund.id,unitIds:result.refund.units.map(u=>u.id),expectedRefundRevision:0,expectedReturnRevision:null,groups:[{groupId:'g',revision:1,balance:0}],reason:'Layak jual',sellable:true as const};
+ await expect(returnRefundedStock(db,data,meta('return',8),locks)).rejects.toThrow();
+ await changeCashCount(db,'cancel',{sessionId:d.cashSessionId,expectedSessionRevision:3,expectedCountRevision:0},meta('cancel-count',8),locks);
+ await returnRefundedStock(db,data,meta('return',9),locks);const snap=await checkpoint(db),receipt=JSON.parse(snap.receipts.find(r=>r.id==='return')!.payload);expect(receipt.payload).toMatchObject({contractVersion:2,sessionSource:{id:d.cashSessionId,revision:4}});await stageSnapshot(stage,snap);expect(await checkpoint(stage)).toEqual(snap);
+ }finally{await db.delete();await stage.delete();}});
