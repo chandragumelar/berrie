@@ -19,6 +19,11 @@ export function assignDiscount(s:State,sku:SKU,channel:Channel,definition:string
  sku.promos={...sku.promos,[channel]:d?{definition:d.id,name:d.name,startsAt:d.startsAt,endsAt:d.endsAt,mode:d.mode,value:d.value,buy:d.buy,free:d.free,revision:(sku.promos?.[channel]?.revision??0)+1,active:true}:{mode:'none',name:'',value:0,revision:(sku.promos?.[channel]?.revision??0)+1,active:false}};
 }
 export function applyDiscountDefinition(s:State,input:Record<string,unknown>){
+ const copy=structuredClone(s);
+ applyDiscountDefinitionMutable(copy,input);
+ s.discounts=copy.discounts;s.catalog=copy.catalog;
+}
+function applyDiscountDefinitionMutable(s:State,input:Record<string,unknown>){
  const old=(s.discounts??[]).find(x=>x.id===input.id);
  if(input.id&&!old)throw Error('Diskon tidak ditemukan.');
  if(input.operation==='delete'){
@@ -30,6 +35,22 @@ export function applyDiscountDefinition(s:State,input:Record<string,unknown>){
  if((s.discounts??[]).some(x=>!x.archived&&x.id!==d.id&&x.name.toLocaleLowerCase('id')===d.name.toLocaleLowerCase('id')))throw Error('Nama diskon sudah dipakai.');
  s.discounts??=[];
  if(old)s.discounts[s.discounts.indexOf(old)]=d;else s.discounts.push(d);
+ if(input.targets!==undefined){
+  if(!Array.isArray(input.targets))throw Error('Sasaran diskon tidak sah.');
+  const selected=new Set<string>();
+  for(const entry of input.targets){
+   if(!entry||typeof entry!=='object')throw Error('Sasaran diskon tidak sah.');
+   const {sku:skuId,channel,replace}=entry as {sku:string;channel:Channel;replace?:string};
+   const sku=s.catalog.find(x=>x.id===skuId&&!x.archived),key=JSON.stringify([skuId,channel]);
+   if(!sku||selected.has(key))throw Error('Sasaran tidak tersedia atau duplikat.');
+   selected.add(key);
+   const current=sku.discountAssignments?.[channel];
+   if(current&&current!==d.id&&replace!==current)throw Error(`${sku.name}: pilih penggantian diskon secara eksplisit.`);
+   assignDiscount(s,sku,channel,d.id);
+  }
+  for(const sku of s.catalog.filter(x=>!x.archived))for(const [channel,assigned] of Object.entries(sku.discountAssignments??{}))
+   if(assigned===d.id&&!selected.has(JSON.stringify([sku.id,channel])))assignDiscount(s,sku,channel as Channel,'');
+ }
  // Updating the definition changes future quotes only; order-unit snapshots stay untouched.
  for(const sku of s.catalog.filter(x=>!x.archived))for(const [channel,assigned] of Object.entries(sku.discountAssignments??{}))if(assigned===d.id)assignDiscount(s,sku,channel as Channel,d.id);
 }

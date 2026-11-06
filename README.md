@@ -60,3 +60,5 @@ Instruksi pemilik: lokal dan **tanpa deployment**. Sumber lokal D-70–75 belum 
 ## Review workspace Pesanan lokal
 
 Pada Panel review, **Muat contoh workspace Pesanan** memuat22 order contoh (20 Aktif/2 Tersimpan): paid-unserved, unpaid-served, parsial, batch/draft tambahan, refund due, nama panjang, daftar panjang dan timestamp hilang. Fixture dibentuk dari operasi domain pada data uji; bukan data toko/penyimpanan produksi. Tidak dimuat otomatis oleh navigasi produk. Review gangguan simpan/unknown dan teks200% memakai kontrol review existing. Muat ulang menghapus memori. Default root loopback membungkus tablet1024×768; `?workspace=responsive` mengikuti viewport browser untuk HP360.
+
+Workspace Diskon D-79 dan batas pemeriksaannya dicatat pada [review](REVIEW-DISKON-D79.md); tetap simulasi memori, tanpa deployment atau kelulusan UT peserta.

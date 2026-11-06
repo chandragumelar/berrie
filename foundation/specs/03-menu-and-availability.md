@@ -199,3 +199,5 @@ Filter **Favorit** sebelum Semua; Semua/Habis/Promo dan kategori owner tetap. Fa
 Pencarian membatasi filter aktif. Favorit kosong/tidak cocok memberi penjelasan dan **Lihat semua menu**. Nama/harga utama, kategori berulang di kartu dihilangkan; promo, pilihan, stok rendah/habis tetap terlihat. Nama panjang tumbuh tanpa mengecilkan target44×44.
 
 Menu sederhana mempunyai satu SKU yang bisa dijual dan tidak mempunyai pilihan aktif yang perlu dipilih/ditampilkan. Label kombinasi tetap tunggal (misalnya Botol pada satu SKU) bukan pilihan interaktif. Pilihan racikan/topping aktif atau lebih dari satu SKU yang dapat dijual memerlukan editor. Harga/promo/channel tetap memakai quote domain; nilai lama tidak diperbarui diam-diam.
+
+D-79 mengganti alur modal D-69: sasaran SKU–channel dapat ditetapkan langsung di Diskon atau melalui Menu dari hubungan yang sama. Pilihan massal berlaku pada hasil terlihat, konflik memerlukan persetujuan eksplisit, dan definisi boleh tanpa sasaran. Simpan definisi dan sasaran atomik; pelepasan hanya untuk definisi yang diedit. Aturan harga, jadwal dan snapshot tetap.

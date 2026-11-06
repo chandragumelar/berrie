@@ -146,3 +146,7 @@ Perbaikan hasil observasi Safari: chevron select tunggal tidak direset shorthand
 Acuan visual Inter lokal/biru-netral dan komponen/state yang sama. Kelompok Aktif/Tersimpan memakai tab berlabel hitungan, filter select berlabel Pengerjaan/Pembayaran pada daftar saja. Entri operasional tombol seluruh lebar, identitas utama, ringkasan dua baris dan +N, status/progres/sisa/kewajiban/waktu terpisah. Pilihan memakai border2px + teks ✓ Dipilih + aria-pressed, tanpa mengandalkan warna. Gunakan token surface/divider/selected-surface/text-accent; fokus ring existing tetap.
 
 ≥900px grid2fr/3fr gap16, scroll terpisah dan min-width0 pada masing-masing area. Detail awal placeholder, tanpa auto-select. <900 daftar/detail bergantian pada region yang dipertahankan, tombol Kembali ke pesanan; filter satu kolom. Detail berurutan tagihan→item per batch/penyajian→pendukung; Aksi lainnya disclosure≥44. Nama panjang membungkus, ringkasan dapat dipendekkan tetapi nama utuh di detail; status bertulisan. Teks200% tetap scroll/reflow; tidak memaksa empat baris detail lama. D-78 mengganti tabel Pesanan generik/default Lunas serta detail tablet halaman terpisah; Kasir D-76/D-77 tetap.
+
+## Diskon D-79
+
+Workspace daftar dan editor mengikuti token, typography dan kontrol aktif. Pada ≥900 px gunakan dua panel; pada lebar lebih kecil editor penuh dengan Kembali. Aksi editor tetap terjangkau saat konten panjang. Status selalu memakai teks, bukan warna saja. Bukti dan batas pemeriksaan browser D-79 ada pada review prototipe.
