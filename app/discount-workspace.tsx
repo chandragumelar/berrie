@@ -1,5 +1,5 @@
 'use client';
-import React,{useState,useEffect} from 'react';
+import React,{useState,useEffect,useRef} from 'react';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {discountDescription,validateDiscount,rebalanceQuantityPromos} from '@/lib/berrie/discounts';
 import {dateInputValue,dateInputTimestamp} from '@/lib/berrie/local-date';
@@ -12,6 +12,8 @@ const key=(sku:string,channel:Channel)=>JSON.stringify([sku,channel]);
 const suggestion=(d:Draft)=>d.mode==='bogo'?`Beli ${d.buy} gratis ${d.free}`:d.mode==='percent'?`Diskon ${d.value}%`:`Potongan Rp${Number(d.value||0).toLocaleString('id-ID')}`;
 export function DiscountWorkspace({state:s,busy,onSave,onCheckResult,onDirtyChange}:{state:State;busy:boolean;onDirtyChange:(dirty:boolean)=>void;onSave:(a:Action)=>Promise<State|undefined>;onCheckResult?:()=>void}){
  const now=useMinuteClock(),[draft,setDraft]=useState<Draft|null>(null),[initial,setInitial]=useState(''),[error,setError]=useState(''),[guard,setGuard]=useState(false),[pending,setPending]=useState<DiscountDefinition|null|undefined>(undefined),[search,setSearch]=useState(''),[filter,setFilter]=useState('Semua'),[targetSearch,setTargetSearch]=useState(''),[channelFilter,setChannelFilter]=useState('Semua');
+ const checking=useRef(false);
+ useEffect(()=>{if(onCheckResult)checking.current=true;else if(checking.current){checking.current=false;setDraft(null);setError('');}},[onCheckResult]);
  useEffect(()=>{onDirtyChange(!!draft&&JSON.stringify(draft)!==initial);},[draft,initial,onDirtyChange]);
  const catalog=s.catalog.filter(x=>!x.archived),list=(s.discounts??[]).filter(x=>!x.archived);
  const assigned=(id:string)=>catalog.flatMap(sku=>channels.filter(c=>sku.discountAssignments?.[c]===id).map(channel=>({sku:sku.id,channel})));
