@@ -1,3 +1,4 @@
+import { validateCashCountTransitions } from './cash-count-history';
 import { makeDraftCancellationChange, type CancelDraftInput } from './draft-cancellation';
 import { unpaidCancellationKey, unpaidReturnKey, makeUnpaidCancellationChange, makeUnpaidReturnChange, type CancelUnpaidInput, type ReturnUnpaidInput } from './unpaid-cancellations';
 import type { DraftMetadata } from './drafts';
@@ -36,7 +37,6 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   const versions=byKey.get(row.key) ?? [];
   versions.push({change,revision:(row.expectedRevision ?? -1)+1,value:row.value});byKey.set(row.key,versions);
  }
- const cashStores=new Set<string>();
  const settlements=new Map<string,{key:string; value:BusinessRecord; operationId:string}>();
  const refunds=new Map<string,string>();
  const draftSequences=new Map<string,Set<number>>();
@@ -155,7 +155,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   const serving=version(`serving:${order}`,d.expectedServingRevision,'serving'),session=version(`cash-session:${payment.payment.cashSessionId}`,d.expectedSessionRevision,'cash-session'),cancellations=version(cancellationKey(order),d.expectedCancellationRevision,'paid-cancellations'),refunds=version(refundKey(order),d.expectedRefundRevision,'served-refunds'),corrections=version(correctionKey(order),d.expectedCorrectionRevision,'payment-corrections'),returns=d.returnStock===null?undefined:version(returnKey(order),d.returnStock?.expectedReturnRevision,'stock-returns');
   if((serving && serving.recordType!=='serving') || session?.recordType!=='cash-session' || (cancellations && cancellations.recordType!=='paid-cancellations') || (refunds && refunds.recordType!=='served-refunds') || (corrections && corrections.recordType!=='payment-corrections') || (returns && returns.recordType!=='stock-returns') || (d.returnStock!==null && (!d.returnStock || !Array.isArray(d.returnStock.groups)))) throw new Error('Sumber batal refund tidak lengkap');
   const groups=(d.returnStock?.groups ?? []).map(g=>{const record=version(`stock-group:${g.groupId}`,g.revision,'stock-group');if(record?.recordType!=='stock-group') throw new Error('Sumber stok tidak sah');return record.stockGroup;});
-  const entries=(byKey.get(`cash-session:${session.session.id}`) ?? []).filter(v=>v.revision<=d.expectedSessionRevision).sort((a,b)=>a.revision-b.revision).map(v=>v.change.ledger[0]?.value as CashMovement);
+  const entries=(byKey.get(`cash-session:${session.session.id}`) ?? []).filter(v=>v.revision<=d.expectedSessionRevision).sort((a,b)=>a.revision-b.revision).map(v=>v.change.ledger[0]?.value as CashMovement).filter((e):e is CashMovement=>!!e);
   const expected=makeCancelRefundChange({batch:batch.batch,payment:payment.payment,settlement:settlement.settlement,serving:serving?.serving ?? null,session:session.session,cancellations:cancellations?.cancellations ?? [],refunds:refunds?.refunds ?? [],corrections:corrections?.corrections ?? [],returns:returns?.returns ?? [],groups,before:cashBalance(entries,session.session)},d,p.metadata);
   if(canonical(change)!==canonical(expected)) throw new Error('Efek batal refund tidak sesuai sumber');
  }
@@ -173,7 +173,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   const serving=version(`serving:${order}`,d.expectedServingRevision,'serving'),session=version(`cash-session:${payment.payment.cashSessionId}`,d.expectedSessionRevision,'cash-session'),cancellations=version(cancellationKey(order),d.expectedCancellationRevision,'paid-cancellations'),refunds=version(refundKey(order),d.expectedRefundRevision,'served-refunds'),corrections=version(correctionKey(order),d.expectedCorrectionRevision,'payment-corrections'),returns=d.returnStock===null?undefined:version(returnKey(order),d.returnStock?.expectedReturnRevision,'stock-returns');
   if(serving?.recordType!=='serving' || session?.recordType!=='cash-session' || cancellations?.recordType!=='paid-cancellations' || (refunds && refunds.recordType!=='served-refunds') || (corrections && corrections.recordType!=='payment-corrections') || (returns && returns.recordType!=='stock-returns') || (d.returnStock!==null && (!d.returnStock || !Array.isArray(d.returnStock.groups)))) throw new Error('Sumber refund tidak lengkap');
   const groups=(d.returnStock?.groups ?? []).map(g=>{const record=version(`stock-group:${g.groupId}`,g.revision,'stock-group');if(record?.recordType!=='stock-group') throw new Error('Sumber stok tidak sah');return record.stockGroup;});
-  const entries=(byKey.get(`cash-session:${session.session.id}`) ?? []).filter(v=>v.revision<=d.expectedSessionRevision).sort((a,b)=>a.revision-b.revision).map(v=>v.change.ledger[0]?.value as CashMovement);
+  const entries=(byKey.get(`cash-session:${session.session.id}`) ?? []).filter(v=>v.revision<=d.expectedSessionRevision).sort((a,b)=>a.revision-b.revision).map(v=>v.change.ledger[0]?.value as CashMovement).filter((e):e is CashMovement=>!!e);
   const expected=makeRefundDueChange({batch:batch.batch,payment:payment.payment,settlement:settlement.settlement,serving:serving.serving,session:session.session,cancellations:cancellations.cancellations,refunds:refunds?.refunds ?? [],corrections:corrections?.corrections ?? [],returns:returns?.returns ?? [],groups,before:cashBalance(entries,session.session)},d,p.metadata);
   if(canonical(change)!==canonical(expected)) throw new Error('Efek pelunasan refund tidak sesuai sumber');
  }
@@ -207,9 +207,9 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   const groupRefs=isRefund?(d as ServedRefundInput).returnStock?.groups ?? []:(d as ReturnRefundInput).groups;
   if(!Array.isArray(groupRefs)) throw new Error('Sumber grup tidak sah');
   const groups=groupRefs.map(g=>{const row=version(`stock-group:${g.groupId}`,g.revision,'stock-group');if(row?.recordType!=='stock-group') throw new Error('Sumber stok tidak sah');return row.stockGroup;});
-  const entries=(byKey.get(`cash-session:${session.session.id}`) ?? []).filter(v=>v.revision<=(sessionRevision as number)).sort((a,b)=>a.revision-b.revision).map(v=>v.change.ledger[0]?.value as CashMovement);
+  const entries=(byKey.get(`cash-session:${session.session.id}`) ?? []).filter(v=>v.revision<=(sessionRevision as number)).sort((a,b)=>a.revision-b.revision).map(v=>v.change.ledger[0]?.value as CashMovement).filter((e):e is CashMovement=>!!e);
   const sources:RefundSources={batch:batch.batch,payment:payment.payment,settlement:settlement.settlement,serving:serving.serving,session:session.session,refunds:refunds?.refunds ?? [],returns:returns?.returns ?? [],corrections:corrections?.corrections ?? [],groups,refundSchemaVersion:refunds?.schemaVersion,sessionRevision:sessionRevision as number,before:cashBalance(entries,session.session)};
-  const expected=isRefund?makeServedRefundChange(sources,d as ServedRefundInput,p.metadata):makeStockReturnChange(sources,d as ReturnRefundInput,p.metadata);
+  const expected=isRefund?makeServedRefundChange(sources,d as ServedRefundInput,p.metadata):makeStockReturnChange(sources,d as ReturnRefundInput,p.metadata,p.contractVersion===2);
   if(canonical(change)!==canonical(expected)) throw new Error('Efek refund tidak sesuai sumber');
  }
  const sessionSource=(change:AtomicChange,sessionId:string,version=2)=>{
@@ -327,6 +327,10 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='cash-count') {
+    if(!v.change.kind.startsWith('cash-count.') || key!==`cash-count:${current.history.sessionId}` || current.history.storeId!==owner) throw new Error('Histori hitungan tidak sah');
+    previous=current;continue;
+   }
    if(current.recordType==='unpaid-cancellation') {
     if(v.revision!==0 || v.change.kind!=='cancellation.unpaid' || key!==unpaidCancellationKey(v.change.targetId)) throw new Error('Histori pembatalan unpaid tidak sah');
     previous=current;continue;
@@ -451,6 +455,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    }
    if(current.recordType==='cash-session') {
     const session=current.session, change=v.change;
+    if(change.kind.startsWith('cash-count.')) {if(previous?.recordType!=='cash-session' || canonical(previous.session)!==canonical(session) || key!==`cash-session:${session.id}`) throw new Error('Sesi hitungan tidak sah');previous=current;continue;}
     if(change.kind==='refund.served' || change.kind==='refund.cancelled' || change.kind==='cancellation.refund-paid') {
      const data=(change.payload as {data:ServedRefundInput|RefundDueInput})?.data;
      if(previous?.recordType!=='cash-session' || canonical(previous.session)!==canonical(session) || data?.expectedSessionRevision!==v.revision-1 || key!==`cash-session:${session.id}`) throw new Error('Sesi refund tidak sah');
@@ -485,14 +490,15 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
      cashEntries.push(change.ledger[0].value as CashMovement);cashBalance(cashEntries,session);
      previous=current;continue;
     }
-    const payload=change.payload as {data:OpenCashInput|MoveCashInput;metadata:CashMetadata};
+    const payload=change.payload as {data:OpenCashInput|MoveCashInput;metadata:CashMetadata;previousClose?:string};
     const data=payload?.data, meta=payload?.metadata, opening=v.revision===0;
     if(!data || !meta || key!==`cash-session:${session.id}` || session.storeId!==owner || change.targetId!==session.id || change.kind!==(opening?'cash.open':'cash.move') || change.state.length!==1 || (opening ? Object.keys(data).sort().join(',')!=='initialCustodian,number,openingAmount,sessionId,timeZone' : Object.keys(data).sort().join(',')!=='amount,category,description,expectedRevision,kind,sessionId') || data.sessionId!==session.id) throw new Error('Operasi kas tidak sah');
     for(const field of ['operationId','storeId','deviceId','deviceEpoch','localSequence','actorId','policyVersion'] as const) if(meta[field]!==change[field]) throw new Error('Metadata kas tidak sesuai');
-    if(opening) {const d=data as OpenCashInput;if(cashStores.has(owner) || d.number!==session.number || d.initialCustodian!==session.initialCustodian || d.openingAmount!==session.openingAmount || d.timeZone!==session.timeZone || session.openedBy!==meta.actorId || session.openedAt!==meta.recordedAt) throw new Error('Pembukaan kas tidak sesuai');cashStores.add(owner);}
+    if(!opening && payload.previousClose!==undefined) throw new Error('Sumber sesi tidak sah');
+    if(opening) {const d=data as OpenCashInput;if(d.number!==session.number || d.initialCustodian!==session.initialCustodian || d.openingAmount!==session.openingAmount || d.timeZone!==session.timeZone || session.openedBy!==meta.actorId || session.openedAt!==meta.recordedAt) throw new Error('Pembukaan kas tidak sesuai');}
     else if(previous?.recordType!=='cash-session' || canonical(previous.session)!==canonical(session) || (data as MoveCashInput).expectedRevision!==v.revision-1) throw new Error('Revisi sesi kas tidak sesuai');
     const before=opening?0:cashBalance(cashEntries,session);
-    if(canonical(change)!==canonical(makeCashChange(session,data,meta,opening?null:v.revision-1,before))) throw new Error('Histori kas tidak sesuai');
+    if(canonical(change)!==canonical(makeCashChange(session,data,meta,opening?null:v.revision-1,before,payload.previousClose))) throw new Error('Histori kas tidak sesuai');
     cashEntries.push(change.ledger[0].value as CashMovement);cashBalance(cashEntries,session);
     previous=current;continue;
    }
@@ -547,6 +553,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const identity of draftOrders.keys()) {const settlement=settlements.get(identity);if(refunds.has(identity) || (settlement && !['payment.confirmed-cash','payment.draft-cash','settlement.confirmed-free','settlement.draft-free','payment.confirmed-noncash','payment.draft-noncash'].includes(changes.find(c=>c.operationId===settlement.operationId)?.kind ?? ''))) throw new Error('Draft sudah memiliki settlement');}
  for(const row of state) if(typed(row.value) && !byKey.has(row.key)) throw new Error('Record bisnis tanpa receipt');
  for(const item of pending) {const source=settlements.get(item.identity);if(!source || canonical(source.value.recordType==='settlement' || source.value.recordType==='refund-history' ? source.value.settlement : null)!==canonical(item.record.settlement)) throw new Error('Settlement asal refund tidak sesuai');edge(source.operationId,item.operationId);}
+ validateCashCountTransitions(receipts,byKey,edge);
  const indegree=new Map(changes.map(change=>[change.operationId,0]));
  for(const next of edges.values()) for(const id of next) indegree.set(id,(indegree.get(id) ?? 0)+1);
  const ready=[...indegree].filter(([,count])=>count===0).map(([id])=>id);let visited=0;
