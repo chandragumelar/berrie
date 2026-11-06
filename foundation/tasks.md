@@ -682,4 +682,4 @@ Pemetaan parsial AC-26/35 untuk refund menurut waktu/sesi pelaksanaan, AC-29 unt
 
 Pemeriksaan clone: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (468 tes), `npm run test:browser` (77 tes Chrome) dan `npm run build` lulus. Satu run unit paralel dengan Chrome sempat timeout pada tes existing; pengulangan berurutan lulus. Satu run Chrome ditolak sandbox saat membuka port lokal dan lulus setelah dijalankan ulang. Chrome memeriksa pembacaan saat settlement lintas tab, reload dan staging; bukan bukti crash/kuota fisik. `npm ci` melaporkan 7 kerentanan moderat pada audit dependensi keseluruhan; tidak dilakukan perubahan dependensi dalam irisan ini.
 
-- D-79: workspace Diskon prototipe dalam pengerjaan; pemeriksaan dan batas aktual tercatat pada review D-79. UT peserta, implementasi operasional dan pilot belum selesai.
+- D-79: workspace Diskon prototipe dan review browser lokal tersedia pada PR; pemeriksaan dan batas aktual tercatat pada review D-79. UT peserta, implementasi operasional dan pilot belum selesai.

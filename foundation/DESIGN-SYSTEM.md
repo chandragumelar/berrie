@@ -149,4 +149,4 @@ Acuan visual Inter lokal/biru-netral dan komponen/state yang sama. Kelompok Akti
 
 ## Diskon D-79
 
-Workspace daftar dan editor mengikuti token, typography dan kontrol aktif. Pada ≥900 px gunakan dua panel; pada lebar lebih kecil editor penuh dengan Kembali. Aksi editor tetap terjangkau saat konten panjang. Status selalu memakai teks, bukan warna saja. Pemeriksaan visual D-79 masih menunggu bukti browser.
+Workspace daftar dan editor mengikuti token, typography dan kontrol aktif. Pada ≥900 px gunakan dua panel; pada lebar lebih kecil editor penuh dengan Kembali. Aksi editor tetap terjangkau saat konten panjang. Status selalu memakai teks, bukan warna saja. Bukti dan batas pemeriksaan browser D-79 ada pada review prototipe.
