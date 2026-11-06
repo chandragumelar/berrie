@@ -29,11 +29,15 @@ export type Payment = CashPayment | NoncashPayment;
 export interface MethodCorrection {
  paymentId:string; orderId:string; storeId:string; cashSessionId:string;
  from:PaymentMethod; to:PaymentMethod; amount:number; reason:string; actorId:string; recordedAt:string;
+ /** Present only for an administrative adjustment after the source session closes. */
+ executionSessionId?:string; evidenceReference?:string;
 }
 export function validateMethodCorrection(value:unknown):asserts value is MethodCorrection {
  if(!value || typeof value!=='object' || Array.isArray(value) || Object.getPrototypeOf(value)!==Object.prototype) throw new Error('Koreksi metode tidak sah');
  const c=value as Record<string,unknown>;
- if(Object.keys(c).sort().join(',')!=='actorId,amount,cashSessionId,from,orderId,paymentId,reason,recordedAt,storeId,to' || ![c.paymentId,c.orderId,c.storeId,c.cashSessionId,c.actorId].every(v=>typeof v==='string' && !!v.trim() && v.length<=200) || typeof c.reason!=='string' || !c.reason.trim() || c.reason.length>500 || !['cash','qris','transfer','ewallet'].includes(c.from as string) || !['cash','qris','transfer','ewallet'].includes(c.to as string) || c.from===c.to || typeof c.recordedAt!=='string') throw new Error('Koreksi metode tidak sah');
+ const administrative=Object.hasOwn(c,'executionSessionId') || Object.hasOwn(c,'evidenceReference');
+ const keys=administrative?'actorId,amount,cashSessionId,evidenceReference,executionSessionId,from,orderId,paymentId,reason,recordedAt,storeId,to':'actorId,amount,cashSessionId,from,orderId,paymentId,reason,recordedAt,storeId,to';
+ if(Object.keys(c).sort().join(',')!==keys || ![c.paymentId,c.orderId,c.storeId,c.cashSessionId,c.actorId].every(v=>typeof v==='string' && !!v.trim() && v.length<=200) || (administrative && (typeof c.executionSessionId!=='string' || !c.executionSessionId.trim() || c.executionSessionId.length>200 || c.executionSessionId===c.cashSessionId || typeof c.evidenceReference!=='string' || !c.evidenceReference.trim() || c.evidenceReference.length>500)) || typeof c.reason!=='string' || !c.reason.trim() || c.reason.length>500 || !['cash','qris','transfer','ewallet'].includes(c.from as string) || !['cash','qris','transfer','ewallet'].includes(c.to as string) || c.from===c.to || typeof c.recordedAt!=='string') throw new Error('Koreksi metode tidak sah');
  integer(c.amount,1,Number.MAX_SAFE_INTEGER); draftDateCode(c.recordedAt,'UTC');
 }
 /** Derive classification only from the immutable payment and a validated, ordered chain. */

@@ -7,7 +7,7 @@ import type { OperationRow, RecordRow } from './database';
 import type { Snapshot } from './recovery';
 
 type Version={change:AtomicChange;revision:number;value:unknown};
-const orderKinds=new Set(['draft.create','draft.update','draft.cancel','batch.confirm-first','payment.draft-cash','payment.confirmed-cash','payment.draft-noncash','payment.confirmed-noncash','settlement.draft-free','settlement.confirmed-free','serving.serve','serving.correct','payment.correct-method','refund.served','refund.return-stock','cancellation.paid','refund.cancelled','cancellation.refund-paid','cancellation.return-stock','cancellation.free','return.free','cancellation.unpaid','return.unpaid']);
+const orderKinds=new Set(['draft.create','draft.update','draft.cancel','batch.confirm-first','payment.draft-cash','payment.confirmed-cash','payment.draft-noncash','payment.confirmed-noncash','settlement.draft-free','settlement.confirmed-free','serving.serve','serving.correct','payment.correct-method','payment.adjust-closed-method','refund.served','refund.return-stock','cancellation.paid','refund.cancelled','cancellation.refund-paid','cancellation.return-stock','cancellation.free','return.free','cancellation.unpaid','return.unpaid']);
 const typed=(v:unknown)=>v && typeof v==='object' && 'recordType' in v?v as BusinessRecord:undefined;
 const stream=(c:AtomicChange)=>JSON.stringify([c.storeId,c.deviceId,c.deviceEpoch]);
 /** A legacy generic record can use any kind without opting into the new contract. */
@@ -75,6 +75,15 @@ export function validateCashCountTransitions(receipts:OperationRow[],byKey:Map<s
  for(const c of changes.filter(c=>orderKinds.has(c.kind))) {
   const draft=typed(byKey.get(`draft:${c.targetId}`)?.find(v=>v.revision===0)?.value);
   if(draft?.recordType!=='draft') continue; // Historic generic sources retain their original contract.
+  if(c.kind==='payment.adjust-closed-method' || ((c.kind==='refund.served' || c.kind==='refund.return-stock') && (c.payload as {contractVersion?:number})?.contractVersion===3)) {
+   const p=c.payload as {sourceSession?:{id:string;revision:number};sessionSource?:{id:string;revision:number}};
+   const origin=p.sourceSession,execution=p.sessionSource;
+   if(!origin || !execution || origin.id!==draft.draft.cashSessionId || origin.id===execution.id || states.get(origin.id)?.get(origin.revision)!=='closed' || states.get(execution.id)?.get(execution.revision)!=='open') throw new Error('Sesi penyesuaian tidak sah');
+   const old=byKey.get(`cash-session:${origin.id}`)?.find(v=>v.revision===origin.revision),current=byKey.get(`cash-session:${execution.id}`)?.find(v=>v.revision===execution.revision),next=byKey.get(`cash-session:${execution.id}`)?.find(v=>v.revision===execution.revision+1);
+   if(!old || old.change.kind!=='cash-count.close' || !current || old.change.storeId!==c.storeId || current.change.storeId!==c.storeId) throw new Error('Sumber sesi penyesuaian tidak sah');
+   edge(old.change.operationId,c.operationId);edge(current.change.operationId,c.operationId);if(next) edge(c.operationId,next.change.operationId);
+   continue;
+  }
   const id=draft.draft.cashSessionId,versions=byKey.get(`cash-session:${id}`) ?? [],p=c.payload as {sessionSource?:{id:string;revision:number};data?:{expectedSessionRevision?:number}};
   const touched=c.state.find(s=>s.key===`cash-session:${id}`);
   const revision=touched?.expectedRevision ?? p?.sessionSource?.revision ?? p?.data?.expectedSessionRevision;
@@ -92,7 +101,9 @@ export function assertSessionWritable(change:AtomicChange,state:RecordRow[]):voi
  if(isCashCountChange(change) || change.kind==='cash.open') return;
  const ids=new Set<string>();
  for(const s of change.state) if(s.key.startsWith('cash-session:')) ids.add(s.key.slice('cash-session:'.length));
- if(orderKinds.has(change.kind)) {const draft=typed(state.find(r=>r.key===`draft:${change.targetId}`)?.value) ?? typed(change.state.find(r=>r.key===`draft:${change.targetId}`)?.value);if(draft?.recordType==='draft') ids.add(draft.draft.cashSessionId);}
+ const postClose=change.kind==='payment.adjust-closed-method' || ((change.kind==='refund.served' || change.kind==='refund.return-stock') && (change.payload as {contractVersion?:number})?.contractVersion===3);
+ if(postClose) {const p=change.payload as {sourceSession?:{id:string;revision:number};sessionSource?:{id:string;revision:number}};const origin=state.find(r=>r.key===`cash-session:${p.sourceSession?.id}`),count=typed(state.find(r=>r.key===`cash-count:${p.sourceSession?.id}`)?.value),execution=state.find(r=>r.key===`cash-session:${p.sessionSource?.id}`);if(!origin || origin.revision!==p.sourceSession?.revision || count?.recordType!=='cash-count' || count.history.events.at(-1)?.action!=='close' || !execution || execution.revision!==p.sessionSource?.revision) throw new Error('Sumber sesi berubah');ids.add(p.sessionSource!.id);}
+ if(orderKinds.has(change.kind) && !postClose) {const draft=typed(state.find(r=>r.key===`draft:${change.targetId}`)?.value) ?? typed(change.state.find(r=>r.key===`draft:${change.targetId}`)?.value);if(draft?.recordType==='draft') ids.add(draft.draft.cashSessionId);}
  if(change.state.some(row=>!typed(row.value)) && state.some(row=>{const record=typed(row.value);const last=record?.recordType==='cash-count' && record.history.storeId===change.storeId?record.history.events.at(-1)?.action:undefined;return last==='save' || last==='revise';})) throw new Error('Sumber generik tidak dapat diubah selama hitungan');
  for(const id of ids) {const count=typed(state.find(r=>r.key===`cash-count:${id}`)?.value);if(count?.recordType==='cash-count') {const action=count.history.events.at(-1)?.action;if(action==='save' || action==='revise' || action==='close') throw new Error('Mutasi sesi ditahan');}}
 }
