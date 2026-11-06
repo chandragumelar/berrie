@@ -1,6 +1,6 @@
 # Berrie — Tahapan kerja
 
-**D-78:** workspace Pesanan selesai di prototipe lokal; [review dan bukti](berrie-site/REVIEW-PESANAN-D78.md). D-77 dan D-78 telah merged; baseline inspeksi fondasi GitHub `c5f5b2b` (PR #29). Fondasi batch pertama, sesi kas, settlement, pembatalan dan refund parsial sudah merged; tidak ada versi layanan atau deployment baru.
+**D-78:** workspace Pesanan selesai di prototipe lokal; [review dan bukti](berrie-site/REVIEW-PESANAN-D78.md). D-77 dan D-78 telah merged; baseline inspeksi fondasi GitHub `ef4839236ebc5d725f9a505ee4fc1509eac4e955` (PR #32). Fondasi batch pertama, sesi kas, settlement, pembatalan, refund dan transaksi pasca tutup parsial sudah merged; tidak ada versi layanan atau deployment baru.
 
 Terakhir diperbarui: **6 November 2026**. Dokumen ini melacak pelaksanaan, bukan mengganti keputusan produk. Sumber kebenaran: [spesifikasi](specs/README.md); urutan pembangunan mengikuti [file 01](specs/01-product-scope.md), gerbang kelulusan mengikuti [file 10](specs/10-acceptance-criteria.md).
 
@@ -20,7 +20,7 @@ Terakhir diperbarui: **6 November 2026**. Dokumen ini melacak pelaksanaan, bukan
 - **D-73: harga/qty agnostik, form menu dengan varian opsional, Kas maksimum640 px dan fondasi visual berdasarkan Atlassian diterapkan lokal.** Alur/cetak/edit draft D-72 tetap. Katalog kiri–pesanan kanan/navigasi horizontal tetap; Inter, komponen, ikon dan state bersama diperbarui. [Review terkini](berrie-site/REVIEW-MENU-KAS-D73.md) memuat bukti dan batas. D-70 menjadi riwayat; latest layanan yang terakhir dikonfirmasi tetap12, tanpa simpan versi/deployment baru.
 - Keputusan terkini **D-01–78**, pekerjaan validasi **V-01–10**, kriteria **AC-01–172**, uji peserta **UT-01–49**. Persetujuan dokumen tidak meluluskan kriteria.
 - [Prototipe Sites](berrie-site/README.md) memakai data memori; [review versi 1](berrie-site/REVIEW-HISTORY.md#d43-d45) dan [review versi 2](berrie-site/REVIEW-HISTORY.md#d46-d48) membatasi klaim pada simulasi masing-masing versi. Mockup M-01/M-02 dipensiunkan pada 8 Oktober 2026; hasil lama tetap historis, tidak menjadi dependensi proyek aktif.
-- GitHub `main` memuat prototipe pada root dan checkpoint fondasi di `foundation/` (hingga merge PR #29 `c5f5b2b`); scaffold T-01 tersedia, T-02/T-03 masih berjalan. Kedua aplikasi tetap terpisah.
+- GitHub `main` memuat prototipe pada root dan checkpoint fondasi di `foundation/` (hingga merge PR #32 `ef4839236ebc5d725f9a505ee4fc1509eac4e955`); scaffold T-01 tersedia, T-02/T-03 masih berjalan. Kedua aplikasi tetap terpisah.
 - Bukti terpilih prototipe bukan kelulusan AC operasional atau UT peserta; printer fisik, keamanan, performa perangkat, restore drill dan pilot belum dibuktikan. Tidak ada blocker untuk persiapan kode lokal; kebutuhan eksternal dicatat di bawah.
 
 ## Patokan untuk melanjutkan
@@ -673,3 +673,11 @@ Bukti parsial AC-26/35: refund QRIS melalui tunai pada sesi lain, refund bertaha
 API internal belum memeriksa identitas, izin atau approval; T-04 wajib sebelum integrasi. Metadata, bukti dan konfirmasi uang bukan bukti otorisasi atau perpindahan uang. Tidak ada UI, auth nyata, platform, batch tambahan, pembatalan baru/refund due lintas sesi, paid-draft legacy, serah-terima, laporan/ekspor lengkap, server/sync, printer atau restore produksi. Tes tidak membuktikan autentisitas checkpoint, keamanan, crash/kuota fisik, perangkat atau pemulihan produksi.
 
 Pemeriksaan clone: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (457 tes unit/storage), `npm run test:browser` (76 tes Chrome IndexedDB/Web Locks), dan `npm run build` lulus. `npm audit --omit=dev` melaporkan nol kerentanan; pemeriksaan ini tidak membuktikan keamanan aplikasi. `git diff --check` dan tautan dokumentasi yang berubah diperiksa sebelum commit.
+
+## Laporan internal penjualan/refund dan SKU — T-14 (parsial)
+
+Baseline `ef4839236ebc5d725f9a505ee4fc1509eac4e955` (PR #32 merged); saat inspeksi tidak ada PR terbuka. API baca internal mereduksi satu checkpoint tervalidasi untuk settlement batch pertama Toko bertipe, refund uang dari alokasi asal, klasifikasi metode dan rekap SKU. Filter sesi atau rentang kalender zona eksplisit; sumber generik/legacy/tidak didukung menghasilkan incomplete tanpa subtotal yang dinyatakan lengkap. Kontrak dan batas ada pada [README aplikasi](app/README.md#laporan-internal-penjualan-dan-sku-irisan-t-14).
+
+Pemetaan parsial AC-26/35 untuk refund menurut waktu/sesi pelaksanaan, AC-29 untuk kaki koreksi/penyesuaian, AC-34/105/154 untuk definisi ringkasan dan SKU, serta UT-11 untuk dasar penelusuran internal. Ini bukan kelulusan AC penuh, UT peserta atau T-14 selesai. T-04 tetap wajib sebelum akses operasional; API bukan otorisasi. Tidak ada UI, platform, batch tambahan, CSV, serah-terima, server/sync, printer atau restore produksi. Tes lokal tidak membuktikan keamanan, autentisitas checkpoint, perangkat fisik atau pilot.
+
+Pemeriksaan clone: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (468 tes), `npm run test:browser` (77 tes Chrome) dan `npm run build` lulus. Satu run unit paralel dengan Chrome sempat timeout pada tes existing; pengulangan berurutan lulus. Satu run Chrome ditolak sandbox saat membuka port lokal dan lulus setelah dijalankan ulang. Chrome memeriksa pembacaan saat settlement lintas tab, reload dan staging; bukan bukti crash/kuota fisik. `npm ci` melaporkan 7 kerentanan moderat pada audit dependensi keseluruhan; tidak dilakukan perubahan dependensi dalam irisan ini.
