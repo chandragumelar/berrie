@@ -91,3 +91,13 @@ test('archived historical types stay deleted after subsequent grid save',()=>{
  let s=fixture();s.catalog.find(x=>x.id==='teh')!.type='Lama';s.settings.menuTypes!.push('Lama');s=reduceAction(s,action('deleteMenu',{group:'Es Teh',confirmed:true},'Arsip menu'),'archive-tea');s=reduceAction(s,action('taxonomy',{kind:'type',operation:'delete',old:'Lama',name:'Lama'}),'delete-type');
  const n=reduceAction(s,action('menuGrid',{rows:catalogDraft(s)},'Harga / impor'),'grid-again');assert.equal(n.settings.menuTypes!.includes('Lama'),false);assert.equal(n.catalog.find(x=>x.id==='teh')!.type,'Lama');
 });
+
+test('bulk discount targets require explicit replacement, release only own assignments and preserve snapshots atomically',()=>{
+ let s=fixture();const order=createOrder(s),sku=s.catalog.find(x=>x.id==='kopi-b')!;order.units=makeUnits(s,order,sku,1,[],'Bungkus','');s.orders.push(order);const snapshot=structuredClone(order);
+ const payload={name:'Massal',mode:'amount',value:1000,targets:[{sku:'kopi-b',channel:'Toko'},{sku:'teh',channel:'GoFood'}]};const before=structuredClone(s);
+ assert.throws(()=>reduceAction(s,action('discountDefinition',payload),'conflict'),/eksplisit/);assert.deepEqual(s,before);
+ s=reduceAction(s,action('discountDefinition',{...payload,targets:[{sku:'kopi-b',channel:'Toko',replace:'demo-10'},{sku:'teh',channel:'GoFood'}]}),'bulk');
+ const d=s.discounts!.find(x=>x.name==='Massal')!;assert.equal(s.catalog.find(x=>x.id==='kopi-b')!.discountAssignments!.Toko,d.id);assert.equal(catalogDraft(s).find(x=>x.sku==='teh')!.discountAssignments!.GoFood,d.id);assert.deepEqual(s.orders[0],snapshot);
+ const invalid=structuredClone(s);assert.throws(()=>reduceAction(s,action('discountDefinition',{id:d.id,name:d.name,mode:'amount',value:999999,targets:[{sku:'teh',channel:'GoFood'}]}),'invalid-bulk'),/melebihi/);assert.deepEqual(s,invalid);
+ s=reduceAction(s,action('discountDefinition',{id:d.id,name:d.name,mode:'amount',value:1000,targets:[]}),'release');assert.equal(s.catalog.find(x=>x.id==='teh')!.discountAssignments!.GoFood,'');assert.equal(s.catalog.find(x=>x.id==='kopi-b')!.discountAssignments!.Toko,'');assert.deepEqual(s.orders[0],snapshot);
+});

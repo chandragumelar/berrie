@@ -107,3 +107,5 @@ D-68 mendahului kategori opsional, Batal perubahan, lokasi hapus, label Ubah sto
 ## Revisi terkini — D-69 (10 Oktober 2026)
 
 Jadwal diskon mulai–selesai opsional zona toko, copy ringkas, Menu/Stok/Rekap bergulir vertikal, grid periode rekap dan Kas ringkas. D-69 mendahului batas jadwal manual/pagination/copy D-60/67/68 yang berbeda. Rujukan D-01–69, AC-01–142, UT-01–32, V-01–10. Melanjutkan versi11 terkonfirmasi; [bukti revisi](../berrie-site/REVIEW-HISTORY.md#d69)/[tasks](../tasks.md). Tanpa deployment; operasional/UT peserta/pilot belum selesai.
+
+**D-79:** keputusan pemilik untuk workspace Diskon prototipe, AC-173–174 dan UT-50–51; lihat register dan review D-79. Belum membuktikan aplikasi operasional atau UT peserta.

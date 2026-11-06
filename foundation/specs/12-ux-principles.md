@@ -547,3 +547,12 @@ Pilih pekerjaan dahulu, baca kewajiban lalu lakukan tindakan sesuai bagian. Stat
 | UT-49 | Lanjutkan draft, bayar dan sajikan terpisah; selesaikan aksi yang mengeluarkan selected dari filter, gagal/unknown | ID/identitas tetap, tidak memilih order pengganti, input bertahan dan tidak menggandakan uang/stok/cetak |
 
 UT-47–49 adalah rencana peserta; review pelaksana bukan kelulusan UT.
+
+## Workspace Diskon — D-79
+
+| ID | Skenario uji peserta yang direncanakan |
+| --- | --- |
+| UT-50 | Buat diskon, pilih beberapa menu/channel, pahami konflik dan dampak harga, lalu simpan. |
+| UT-51 | Cari dan edit diskon, lepas sasaran, atur jadwal dan pulihkan draft saat keluar/gagal. |
+
+Belum ada hasil uji peserta.
