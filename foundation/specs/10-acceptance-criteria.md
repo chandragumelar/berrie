@@ -405,3 +405,12 @@ D-78 memperbarui bagian UI AC-117/119, bukan aturan penyelesaian/integritasnya. 
 | AC-172 | Aksi sukses update list/detail dari satu state, selection keluar filter/completed dikosongkan dan notice hasil tanpa auto-select tetangga; kembali Riwayat menjaga konteks. Input/qty belum selesai diberi guard; gagal mempertahankan input, unknown memeriksa operasi sama lalu update sekali. Pilih/filter/navigasi tanpa mutasi bisnis. |
 
 Bukti prototipe terpilih pada review D-78; tidak meluluskan storage/keamanan/UT peserta/printer/pilot.
+
+## Workspace Diskon — D-79
+
+| ID | Kriteria |
+| --- | --- |
+| AC-173 | Buat/edit diskon dan sasaran SKU–channel; pilihan massal hanya hasil terlihat; konflik memerlukan penggantian eksplisit; pelepasan tidak menghapus hubungan diskon lain; seluruh perubahan atomik dan Menu konsisten. |
+| AC-174 | Daftar status dan periode dapat dicari/filter dan ditelusuri; editor responsif memuat dampak harga dan snapshot, nama saran dapat diedit, jadwal mengikuti batas domain, guard dan gagal/unknown menjaga input. |
+
+Kriteria menunggu bukti lengkap, termasuk browser dan UT peserta; tes prototipe bukan bukti operasional.

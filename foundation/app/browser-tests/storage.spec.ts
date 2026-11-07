@@ -54,3 +54,51 @@ test('staging IndexedDB mengisolasi mutasi input hingga dibuka kembali',async({p
   } finally {await source.delete();await stage.delete();}
  });expect(evidence.staged).toEqual(evidence.before);expect(evidence.sourceAfter).toEqual(evidence.before);
 });
+
+test('abort penulisan IndexedDB bertahan setelah buka ulang dan retry tepat sekali',async({page})=>{
+ await page.goto('/');
+ const evidence=await page.evaluate(async()=>{
+  const {BerrieDatabase}=await import('/src/storage/database.ts');
+  const {commitChange}=await import('/src/storage/commit.ts');
+  const {checkpoint}=await import('/src/storage/recovery.ts');
+  const name=`abort-write-${crypto.randomUUID()}`,db=new BerrieDatabase(name);
+  const base={operationId:'awal',storeId:'s',deviceId:'d',deviceEpoch:1,localSequence:1,kind:'test',targetId:'stock',actorId:'a',policyVersion:1,payload:{qty:1},state:[{key:'stock',expectedRevision:null as number|null,value:9}],ledger:[{id:'l-awal',operationId:'awal',value:-1}],audit:[{id:'a-awal',operationId:'awal',value:'awal'}],outbox:{id:'o-awal',operationId:'awal',value:'awal'},result:{ok:true}};
+  const input={...base,operationId:'retry',localSequence:2,state:[{key:'stock',expectedRevision:0,value:8}],ledger:[{id:'l-retry',operationId:'retry',value:-1}],audit:[{id:'a-retry',operationId:'retry',value:'retry'}],outbox:{id:'o-retry',operationId:'retry',value:'retry'}};
+  let reopened:InstanceType<typeof BerrieDatabase>|undefined;
+  try {
+   await commitChange(db,base);const before=await checkpoint(db);
+   let hit=false;db.outbox.hook('creating',()=>{hit=true;throw new Error('abort penulisan')});
+   let failed=false;try{await commitChange(db,input)}catch{failed=true}
+   db.close();reopened=new BerrieDatabase(name);const afterAbort=await checkpoint(reopened);
+   const result=await commitChange(reopened,input),afterSuccess=await checkpoint(reopened);
+   const replay=await commitChange(reopened,input),afterReplay=await checkpoint(reopened);
+   return {before,afterAbort,afterSuccess,afterReplay,result,replay,hit,failed};
+  } finally {db.close();if(reopened) await reopened.delete();else await db.delete();}
+ });
+ expect(evidence.hit).toBe(true);expect(evidence.failed).toBe(true);expect(evidence.afterAbort).toEqual(evidence.before);
+ expect(evidence.result).toEqual({ok:true});expect(evidence.replay).toEqual(evidence.result);
+ expect(evidence.afterSuccess.state).toEqual([{key:'stock',revision:1,value:8}]);expect(evidence.afterSuccess.sequences[0].sequence).toBe(2);
+ for(const collection of ['ledger','audit','outbox','receipts'] as const) expect(evidence.afterSuccess[collection]).toHaveLength(2);
+ expect(evidence.afterReplay).toEqual(evidence.afterSuccess);
+});
+test('record settlement dan refund bertahan di IndexedDB setelah staging dan buka ulang',async({page})=>{
+ await page.goto('/');const result=await page.evaluate(async()=>{
+  const {BerrieDatabase}=await import('/src/storage/database.ts');const {commitChange}=await import('/src/storage/commit.ts');const {checkpoint,stageSnapshot}=await import('/src/storage/recovery.ts');
+  const {freezeSettlement,refund}=await import('/src/domain/settlement.ts');const {createSettlementRecord,createRefundHistoryRecord}=await import('/src/domain/business-record.ts');
+  const snapshot=freezeSettlement('order',[{unitIds:['A'],skuId:'a',skuPrice:10000,toppingPrice:0,promo:{kind:'none',revision:1}},{unitIds:['B'],skuId:'b',skuPrice:20000,toppingPrice:0,promo:{kind:'none',revision:1}}],{kind:'amount',value:1000},1000,500,'payment');
+  const first=refund(snapshot,[],['A']),second=refund(snapshot,[first],['B']);const values=[createSettlementRecord(snapshot),createRefundHistoryRecord(snapshot,[first,second])];
+  const name=`typed-${crypto.randomUUID()}`,source=new BerrieDatabase(name),stage=new BerrieDatabase(name+'-stage');
+  try {for(let i=0;i<values.length;i++){const op=`op${i}`;await commitChange(source,{operationId:op,storeId:'s',deviceId:'d',deviceEpoch:1,localSequence:i+1,kind:'test',targetId:op,actorId:'a',policyVersion:1,payload:{},state:[{key:op,expectedRevision:null,value:values[i]}],ledger:[{id:`l${i}`,operationId:op,value:1}],audit:[{id:`a${i}`,operationId:op,value:1}],outbox:{id:`o${i}`,operationId:op,value:1},result:'ok'});}
+   const original=await checkpoint(source);await stageSnapshot(stage,original);source.close();stage.close();const reopened=new BerrieDatabase(name+'-stage');try{return {original,restored:await checkpoint(reopened),values};}finally{reopened.close();}
+  }finally{await source.delete();await stage.delete();}
+ });expect(result.restored).toEqual(result.original);expect(result.restored.state.map(row=>row.value)).toEqual(result.values);expect(result.values[0].settlement.totals.total).toBe(33350);
+});
+
+test('dua tab tidak dapat refund unit yang sama melalui key berbeda',async({browser})=>{
+ const context=await browser.newContext();const a=await context.newPage(),b=await context.newPage();await Promise.all([a.goto('/'),b.goto('/')]);const name=`refund-race-${crypto.randomUUID()}`;
+ await a.evaluate(async name=>{const {BerrieDatabase}=await import('/src/storage/database.ts');const {commitChange}=await import('/src/storage/commit.ts');const {freezeSettlement}=await import('/src/domain/settlement.ts');const {createSettlementRecord}=await import('/src/domain/business-record.ts');const db=new BerrieDatabase(name);const s=freezeSettlement('order',[{unitIds:['u'],skuId:'s',skuPrice:100,toppingPrice:0,promo:{kind:'none',revision:1}}],{kind:'none'},0,0,'payment');await commitChange(db,{operationId:'settle',storeId:'s',deviceId:'d',deviceEpoch:1,localSequence:1,kind:'test',targetId:'order',actorId:'a',policyVersion:1,payload:{},state:[{key:'settlement',expectedRevision:null,value:createSettlementRecord(s)}],ledger:[],audit:[{id:'a-settle',operationId:'settle',value:1}],outbox:{id:'o-settle',operationId:'settle',value:1},result:'ok'});db.close();},name);
+ const run=(page:typeof a,op:string)=>page.evaluate(async({name,op})=>{const {BerrieDatabase}=await import('/src/storage/database.ts');const {commitChange}=await import('/src/storage/commit.ts');const {refund}=await import('/src/domain/settlement.ts');const {createRefundHistoryRecord}=await import('/src/domain/business-record.ts');const db=new BerrieDatabase(name);try {const row=await db.state.get('settlement');const s=(row!.value as {settlement:Parameters<typeof refund>[0]}).settlement;const value=createRefundHistoryRecord(s,[refund(s,[],['u'])]);return await commitChange(db,{operationId:op,storeId:'s',deviceId:op,deviceEpoch:1,localSequence:1,kind:'test',targetId:'order',actorId:'a',policyVersion:1,payload:{},state:[{key:op,expectedRevision:null,value}],ledger:[{id:`l-${op}`,operationId:op,value:1}],audit:[{id:`a-${op}`,operationId:op,value:1}],outbox:{id:`o-${op}`,operationId:op,value:1},result:'ok'});}catch{return 'rejected'}finally{db.close()}},{name,op});
+ const results=await Promise.all([run(a,'a'),run(b,'b')]);expect(results.sort()).toEqual(['ok','rejected']);
+ const snap=await a.evaluate(async name=>{const {BerrieDatabase}=await import('/src/storage/database.ts');const {checkpoint}=await import('/src/storage/recovery.ts');const db=new BerrieDatabase(name);try{return await checkpoint(db)}finally{await db.delete()}},name);
+ expect(snap.state).toHaveLength(2);expect(snap.ledger).toHaveLength(1);expect(snap.audit).toHaveLength(2);expect(snap.outbox).toHaveLength(2);expect(snap.receipts).toHaveLength(2);expect(snap.sequences).toHaveLength(2);await context.close();
+});

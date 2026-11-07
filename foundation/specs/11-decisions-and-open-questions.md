@@ -343,3 +343,7 @@ D-76 mendahului kewajiban modal/Tambahkan untuk semua menu dan penyajian hanya d
 | D-78 | Aktif/Tersimpan tanpa duplikasi; pengerjaan dan pembayaran AND awal Semua; daftar operasional berurut konfirmasi batch; tablet≥900 daftar40/detail60 scroll terpisah, HP detail penuh; detail bersama tagihan→penyajian→aksi tambahan/Aksi lainnya; Lanjutkan pesanan untuk draft yang sama | Instruksi eksplisit pemilik mengganti default Lunas/filter tabel/halaman detail terpisah tablet D-55. Waktu hilang tidak diganti created/payment; tanpa ambang terlambat. Selection keluar hasil dikosongkan setelah aksi, tanpa auto-select tetangga. Uang/stok/settlement/definisi selesai/refund/izin/actor/approver/cetak/penutupan tidak berubah. Kasir D-76/D-77 tetap. Prototipe memori, lokal saja; tanpa commit/push/PR/versi layanan/deployment. | 02/04/05/07/08/09/10/12; DESIGN-SYSTEM; AC-166–172; UT-47–49; review D-78/tasks |
 
 ID terdahulu tetap: D-01–78, AC-01–172, UT-01–49, V-01–10. [Bukti dan batas lokal](../berrie-site/REVIEW-PESANAN-D78.md).
+
+## Workspace Diskon — D-79
+
+Keputusan pemilik untuk prototipe: definisi dan sasaran SKU–channel dikelola dalam satu workspace dengan konflik penggantian eksplisit, status berdasarkan sasaran dan jadwal, serta ringkasan dampak sebelum simpan. Jadwal, rumus, snapshot dan stok tetap. Implementasi operasional dan UT peserta belum dibuktikan; lihat review D-79.

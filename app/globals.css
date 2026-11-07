@@ -546,3 +546,10 @@ summary { cursor:pointer;min-height:44px;padding:10px 0; }
 .cash-empty button { justify-self:start;min-width:156px;margin-top:8px; }
 @media(max-width:600px) { .cash-finish-paths { grid-template-columns:1fr;gap:16px; }.cash-finish .finish-close { border:0;border-top:1px solid var(--divider);padding:16px 0 0;gap:12px; }.cash-actions { display:grid;grid-template-columns:1fr 1fr; }.cash-actions button { min-width:0; } }
 .cash-finish-paths .finish-path { gap:12px; }
+
+/* Workspace Diskon: daftar tetap berada di tempat saat editor dibuka. */
+.discount-workspace{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:16px;align-items:start}
+.discount-workspace:not(.has-detail){grid-template-columns:1fr}
+.discount-list,.discount-editor{min-width:0}.discount-list-scroll{max-height:65vh;overflow:auto}.discount-row{display:flex;width:100%;flex-direction:column;align-items:flex-start;text-align:left;gap:4px;padding:16px;border-bottom:1px solid var(--border,#dfe1e6)}
+.discount-editor{border:1px solid var(--border,#dfe1e6);border-radius:8px;max-height:calc(100vh - 150px);overflow:auto}.discount-editor-actions{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:12px;background:var(--surface,#fff)}.discount-editor-actions strong{flex:1}.discount-editor-body{padding:16px;display:grid;gap:12px}.discount-editor-body fieldset{min-width:0;padding:12px;border:1px solid #dfe1e6}.discount-target{padding:8px 0;display:grid;gap:4px}.discount-editor-body input[type=checkbox],.discount-editor-body input[type=radio]{width:auto;min-height:0}
+@media(max-width:899px){.discount-workspace{display:block}.discount-workspace.has-detail .discount-list{display:none}.discount-editor{max-height:none;overflow:visible}.discount-editor-actions{top:0}}

@@ -29,3 +29,33 @@ it('membekukan input operasi saat menunggu lock tanpa mengubah objek pemanggil',
  await expect(commitChange(db,{...original,payload:{nested:{qty:2}}},locks)).rejects.toThrow('Konflik');expect(await checkpoint(db)).toEqual(snapshot);
  await db.delete();await stage.delete();
 });
+
+it.each(['sequences','state','ledger','audit','outbox','receipts','quota'] as const)('rollback dan retry commit setelah kegagalan %s',async(stage)=>{
+ const db=new BerrieDatabase(`fault-${crypto.randomUUID()}`);
+ try {
+  await commitChange(db,change('awal',null),locks);
+  const before=await checkpoint(db), input={...change('retry',0),localSequence:2};
+  const table=stage==='quota'?db.outbox:db[stage];
+  const method=stage==='sequences'?'put':stage==='state'?'bulkPut':stage==='ledger'||stage==='audit'?'bulkAdd':'add';
+  // The hook runs inside the actual write, after all preceding writes have been queued.
+  const error=stage==='quota'?new DOMException('simulasi kuota','QuotaExceededError'):new Error(`gagal ${stage}`);
+  const hook=()=>{throw error};
+  table.hook('creating',hook);
+  // state and sequence update existing rows rather than creating them.
+  if(method==='put'||method==='bulkPut') table.hook('updating',hook);
+  await expect(commitChange(db,input,locks)).rejects.toMatchObject({name:error.name});
+  table.hook('creating').unsubscribe(hook);
+  if(method==='put'||method==='bulkPut') table.hook('updating').unsubscribe(hook);
+  expect(await checkpoint(db)).toEqual(before);
+  expect(await commitChange(db,input,locks)).toEqual(input.result);
+  const after=await checkpoint(db);
+  expect(after.state).toEqual([{key:'stock',revision:1,value:4}]);
+  expect(after.sequences[0].sequence).toBe(2);
+  expect(after.ledger).toEqual([...before.ledger,...input.ledger]);
+  expect(after.audit).toEqual([...before.audit,...input.audit]);
+  expect(after.outbox).toEqual([...before.outbox,input.outbox]);
+  expect(after.receipts).toEqual([...before.receipts,{id:input.operationId,payload:canonical(input),result:input.result}]);
+  expect(await commitChange(db,input,locks)).toEqual(input.result);
+  expect(await checkpoint(db)).toEqual(after);
+ } finally {await db.delete();}
+});
