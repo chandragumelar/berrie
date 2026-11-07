@@ -15,6 +15,7 @@ export function DiscountWorkspace({state:s,busy,onSave,onCheckResult,onDirtyChan
  const checking=useRef(false);
  useEffect(()=>{if(onCheckResult)checking.current=true;else if(checking.current){checking.current=false;setDraft(null);setError('');}},[onCheckResult]);
  useEffect(()=>{onDirtyChange(!!draft&&JSON.stringify(draft)!==initial);},[draft,initial,onDirtyChange]);
+ useEffect(()=>()=>onDirtyChange(false),[onDirtyChange]);
  const catalog=s.catalog.filter(x=>!x.archived),list=(s.discounts??[]).filter(x=>!x.archived);
  const assigned=(id:string)=>catalog.flatMap(sku=>channels.filter(c=>sku.discountAssignments?.[c]===id).map(channel=>({sku:sku.id,channel})));
  const status=(d:DiscountDefinition)=>!assigned(d.id).length?'Belum dipakai':d.startsAt!==undefined&&now<d.startsAt?'Terjadwal':d.endsAt!==undefined&&now>=d.endsAt?'Selesai':'Berlaku';

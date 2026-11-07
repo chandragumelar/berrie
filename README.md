@@ -1,5 +1,7 @@
 # Berrie · Prototipe Sites
 
+**Menu D-79:** daftar induk, editor satu simpan, preview dan edit massal; [catatan pemeriksaan](REVIEW-MENU-D79.md). Folder `foundation/` adalah snapshot scaffold produksi dengan perintah dan konfigurasi sendiri, bukan bagian pemeriksaan prototipe Sites.
+
 **Pesanan terbaru D-78 · 31 Oktober 2026:** Aktif/Tersimpan, dua filter AND awal Semua, daftar operasional dan detail bersama tablet40/60 (≥900) / HP detail penuh. [Review D-78](REVIEW-PESANAN-D78.md). Kasir D-76/D-77 dipertahankan. Data memori. Commit dan PR D-78 diotorisasi pemilik pada tindak lanjut; merge oleh pemilik, tanpa deployment/versi layanan baru.
 
 **Copy terbaru D-77:** Channel dan nilainya sebaris; kontrol penyajian tanpa judul/bantuan terlihat. Perilaku D-76 tetap.
