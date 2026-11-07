@@ -247,7 +247,7 @@ function Berrie() {
         }
     }
     catch { /* Form validation appears on submit. */ }
-    const go = (p: string) => { if(selectionGuard())return; if (busy || unknown) return; if(editorDirty && ['Menu & Stok','Diskon'].includes(page) && p!==page){setError(editorExitMessage);return;} if(p==='Pesanan' && !(page==='Detail'&&detailOrigin==='Pesanan')){setOrderQuery(initialOrderQuery());setSelectedOrderId('');} if(p==='Pengaturan'&&page!=='Pengaturan')setSettingsTab('Toko'); if (inlinePayment) {
+    const go = (p: string) => { if(selectionGuard())return; if (busy || unknown) return; if(editorDirty && ['Menu & Stok','Diskon'].includes(page) && p!==page){if(page!=='Menu & Stok'||!window.confirm('Buang perubahan yang belum disimpan? Pilih Batal untuk lanjut mengedit.')){setError(editorExitMessage);return;}window.dispatchEvent(new Event('berrie-discard-editor'));} if(p==='Pesanan' && !(page==='Detail'&&detailOrigin==='Pesanan')){setOrderQuery(initialOrderQuery());setSelectedOrderId('');} if(p==='Pengaturan'&&page!=='Pengaturan')setSettingsTab('Toko'); if (inlinePayment) {
         if (busy || unknown)
             return;
         close();
