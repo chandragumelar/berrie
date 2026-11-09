@@ -717,4 +717,10 @@ Primitive verifier PIN enam digit dengan salt acak dan PBKDF2-HMAC-SHA256, datab
 
 Bukti parsial AC-03/77: format/verifier, eskalasi, batas waktu, reload, dua tab, verifier berubah selama KDF, lock lintas tab, fault storage dan isolasi checkpoint/staging. Ini bukan kelulusan AC atau T-04: autentikasi dan reset online, permit, izin aktivitas, approval, isolasi domain/server, pemulihan clock fault, UI dan pengujian perangkat/keamanan masih diperlukan. Unlock lokal bukan izin atau bukti approval; transaksi bisnis yang sudah commit tetap utuh.
 
+### Fondasi permit offline (parsial T-04)
+
+Kontrak permit bertanda tangan, anchor waktu IndexedDB terpisah dan evaluator kemampuan internal tersedia; format dan batas integrasi pada [README aplikasi](app/README.md#fondasi-permit-offline-internal-parsial-t-04). Bukti parsial AC-40/41/77 mencakup pemeriksaan signature/identitas, expiry dan warning, sesi PIN, mode terbatas, rollback dan isolasi checkpoint. T-04 tetap Menunggu: penerbit dan konfigurasi kunci produksi, autentikasi/aktivasi/reset online, policy dan approval, pengikatan atomik ke command dengan bukti umur unit yang tepercaya, keamanan server dan review perangkat belum selesai. Jam saat semua instance tertutup tidak dapat sepenuhnya diaudit browser; checkpoint tidak mengaktifkan permit. Tidak ada klaim AC penuh atau pilot.
+
+Pemeriksaan clone: `npm ci --legacy-peer-deps`, typecheck, lint, 532 tes unit/storage, 98 tes browser Chrome dan build lulus berurutan. Audit dependensi npm melaporkan tujuh kerentanan sedang; penilaian dan pembaruan dependensi di luar perubahan ini.
+
 Pemeriksaan clone: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (523 tes), `npm run test:browser` (97 tes Chrome) dan `npm run build` lulus berurutan. Tes browser PIN terarah dijalankan ulang setelah penguatan pemeriksaan staging. Browser menggunakan server localhost dan Chrome di luar sandbox; tes otomatis tidak menggantikan review keamanan atau pengujian perangkat fisik.

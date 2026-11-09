@@ -26,7 +26,7 @@ export class LocalPinSecurity {
  private anchors=new Map<string,{marker:number; monotonic:number}>();
  private clockSample:{wall:number; monotonic:number}|null=null;
  private clockFault=false;
- constructor(name:string,private locks:LockProvider=navigator.locks,private now:()=>number=Date.now,private monotonic:()=>number=()=>performance.now()) { this.db=new SecurityDatabase(`${name}-local-security`); }
+ constructor(readonly businessName:string,private locks:LockProvider=navigator.locks,private now:()=>number=Date.now,private monotonic:()=>number=()=>performance.now()) { this.db=new SecurityDatabase(`${businessName}-local-security`); }
  private sample():{wall:number;monotonic:number;fault:boolean} {
   const wall=this.now(), monotonic=this.monotonic(); validTime(wall);
   if(!Number.isFinite(monotonic) || monotonic<0) throw new Error('Waktu tidak sah; perlu verifikasi online');
@@ -97,5 +97,10 @@ export class LocalPinSecurity {
    if(s.clockFault || now-s.lastActivity>=LOCK_MS) { s.identity=null; s.generation=increment(s.generation); this.token=null; await this.db.session.put(s); return false; }
    if(visible && activity) s.lastActivity=now; await this.db.session.put(s); return true;
   }); } catch(error) { this.token=null; throw error; }
+ }
+ /** Bind a live in-memory PIN session to the requested identity. */
+ async checkIdentity(identity:PinIdentity):Promise<boolean> {
+  if(!this.token || this.token.identity!==identityKey(identity)) return false;
+  return this.check(true);
  }
 }
