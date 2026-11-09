@@ -228,3 +228,11 @@ API internal ini belum menerapkan otorisasi T-04. Cakupan tetap batch pertama To
 Ini hanya API internal sensitif; T-04 tetap harus mengotorisasi akses dan menerapkan hitung buta sebelum ada UI. Tidak ada UI, autentikasi baru, server/sync, printer atau restore produksi. Checkpoint tervalidasi tidak membuktikan autentisitas atau keamanan perangkat.
 
 Pemeriksaan clone: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (495 tes), `npm run test:browser` (90 tes Chrome) dan `npm run build` lulus. Tes browser memakai Chrome lokal dan akses port localhost.
+
+## Laporan stok internal dan CSV (parsial T-14)
+
+`readInternalStockReport(db, storeId)` membaca satu checkpoint IndexedDB tervalidasi tanpa menulis. Satu baris per grup memuat revisi, baseline koreksi terakhir, saldo, minimum, kondisi Habis/Menipis/Aman dan ID SKU yang dipetakan; saldo tidak dijumlah ulang per SKU. Ledger disusun menurut revisi grup, bukan waktu, dan merekonsiliasi opening, koreksi, debit batch pertama dan return yang didukung terhadap saldo terkini. Perubahan minimum tidak membuat pergerakan. ID ledger, operasi, grup, pesanan, unit dan referensi refund/pembatalan yang tersedia disertakan; waktu atau referensi yang tidak tersedia kosong. Sumber generik atau batch legacy menghasilkan status `incomplete`; histori rusak ditolak.
+
+`exportStockReportCsv(report)` menghasilkan `balances` dan `ledger` dari hasil pembacaan yang sama tanpa mengakses database. Keduanya memiliki cakupan, ID toko, schema dan boundary checkpoint identik; header menjelaskan kolom, waktu UTC, teks UTF-8 dengan BOM dan escaping CSV, serta perlindungan formula spreadsheet. Delta negatif tetap angka. Ekspor ditahan untuk `incomplete`. CSV bukan backup dan tidak dapat memulihkan database.
+
+API ini hanya internal. T-04 wajib sebelum akses operasional; actor dan policy metadata bukan otorisasi. Cakupan bukan katalog lengkap, batch tambahan, server/sync atau UI; checkpoint tervalidasi bukan bukti autentisitas, keamanan, restore produksi atau pilot.
