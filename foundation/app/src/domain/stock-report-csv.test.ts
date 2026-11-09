@@ -1,0 +1,10 @@
+import {expect,it} from 'vitest';
+import {exportStockReportCsv} from './stock-report-csv';
+import {stockCondition,type StockReport} from './stock-report';
+function parse(text:string):string[][] {expect(text.startsWith('\ufeff')).toBe(true);const rows:string[][]=[];let row:string[]=[],cell='',quoted=false;for(let i=1;i<text.length;i++){const ch=text[i];if(quoted){if(ch==='"'&&text[i+1]==='"'){cell+='"';i++;}else if(ch==='"')quoted=false;else cell+=ch;}else if(ch==='"')quoted=true;else if(ch===','){row.push(cell);cell='';}else if(ch==='\r'&&text[i+1]==='\n'){row.push(cell);rows.push(row);row=[];cell='';i++;}else cell+=ch;}expect(quoted).toBe(false);return rows;}
+it('mengekspor dua CSV dari boundary sama dengan teks aman dan delta numerik',()=>{
+ const report:StockReport={storeId:'toko',scope:'semua',checkpoint:{schema:1,boundary:[{key:'k',sequence:2}]},status:'complete',incomplete:[],groups:[{groupId:'=rumus',revision:1,baseline:8,balance:3,minimum:3,condition:'Menipis',skuIds:['kopi, "susu"\n☕']}],ledger:[{ledgerId:'ledger',operationId:'op',groupId:'=rumus',revision:1,kind:'correction',orderId:null,sourceId:null,refundId:null,cancellationId:null,paymentId:null,unitIds:[],actorId:' \t=SUM(1,2)',occurredAt:'2026-11-01T00:00:00Z',recordedAt:null,reason:'é, "teks"\nbaris',delta:-5,before:8,after:3}]};
+ const files=exportStockReportCsv(report),balances=parse(files.balances),ledger=parse(files.ledger);for(const rows of [balances,ledger])expect(rows.find(r=>r[0]==='checkpoint_boundary_json')?.[1]).toBe(JSON.stringify(report.checkpoint.boundary));
+ const g=balances.at(-1)!,e=ledger.at(-1)!;expect(g).toEqual(["'=rumus",'1','8','3','3','Menipis',JSON.stringify(report.groups[0].skuIds)]);expect(e[11]).toBe("' \t=SUM(1,2)");expect(e[14]).toBe(report.ledger[0].reason);expect(e.slice(15)).toEqual(['-5','8','3']);expect(()=>exportStockReportCsv({...report,status:'incomplete'})).toThrow('Ekspor ditahan');
+});
+it('membedakan nol, ambang dan aman',()=>{expect(stockCondition(0,0)).toBe('Habis');expect(stockCondition(2,2)).toBe('Menipis');expect(stockCondition(3,2)).toBe('Aman');});

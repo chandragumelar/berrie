@@ -704,3 +704,9 @@ Pemeriksaan clone: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run li
 Laporan checkpoint yang sama menyediakan breakdown tanggal zona eksplisit dan ekspor ringkasan, harian, metode, SKU dan kejadian tanpa pembacaan ulang. Filter sesi tetap didukung; sumber tidak lengkap menahan ekspor. Kontrak kolom dan keterbatasan ada di [README aplikasi](app/README.md#breakdown-harian-dan-csv-penjualan-internal-parsial-t-14). Pemetaan parsial AC-26/29/34–36/105/154/156 dan UT-11; belum membuktikan kelulusan AC, UT peserta atau pilot. T-04 tetap prasyarat akses, T-14 tetap Menunggu, cakupan batch pertama Toko dan CSV bukan backup.
 
 Bukti clone: `npm ci --legacy-peer-deps`, typecheck, lint, 497 tes unit, 90 tes browser Chrome dan build lulus; `git diff --check` serta tautan baru diperiksa. Tes memeriksa agregasi tanggal dan nilai, CSV yang diparse, refund dan penyesuaian lintas sesi, penolakan sumber incomplete/rusak, dan konsistensi lintas tab/reload/staging tanpa mutasi. Tes otomatis tidak menggantikan verifikasi akses, perangkat, keamanan, restore atau peserta.
+
+## Laporan stok internal dan CSV — T-14 (parsial)
+
+Pembaca internal memakai satu checkpoint tervalidasi untuk saldo per grup, pemetaan SKU dan ledger berdasar revisi, dengan opening, koreksi, debit batch pertama dan return yang didukung. Ekspor saldo dan ledger berbagi hasil/boundary, ditahan bila sumber tidak lengkap; CSV bukan backup. Kontrak dan batas pada [README aplikasi](app/README.md#laporan-stok-internal-dan-csv-parsial-t-14).
+
+Bukti parsial AC-36/115/123: rekonsiliasi saldo dan ID sumber, ekspor serta penanganan sumber tidak lengkap pada data lokal; ini tidak meluluskan AC atau T-14 penuh. T-04 tetap wajib sebelum akses operasional. Tes bukan bukti keamanan, UT peserta, restore produksi atau kesiapan pilot; tidak ada UI, server/sync atau deployment.

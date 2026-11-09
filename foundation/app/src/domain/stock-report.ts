@@ -1,0 +1,5 @@
+import type { CountBoundary } from './cash-count';
+export interface StockReportGroup { groupId:string; revision:number; baseline:number; balance:number; minimum:number; condition:'Habis'|'Menipis'|'Aman'; skuIds:string[] }
+export interface StockReportEntry { ledgerId:string; operationId:string; groupId:string; revision:number; kind:'opening'|'correction'|'debit'|'return'; orderId:string|null; sourceId:string|null; refundId:string|null; cancellationId:string|null; paymentId:string|null; unitIds:string[]; actorId:string; occurredAt:string|null; recordedAt:string|null; reason:string|null; delta:number; before:number; after:number }
+export interface StockReport { storeId:string; scope:string; checkpoint:{schema:1;boundary:CountBoundary[]}; status:'complete'|'incomplete'; incomplete:{key:string;reason:string}[]; groups:StockReportGroup[]; ledger:StockReportEntry[] }
+export function stockCondition(balance:number, minimum:number):StockReportGroup['condition'] { return balance===0?'Habis':balance<=minimum?'Menipis':'Aman'; }
