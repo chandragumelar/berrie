@@ -1,6 +1,6 @@
 import { describe,expect,it } from 'vitest';
 import { freezeSettlement } from './settlement';
-import { calculateReports, type Sale } from './reports';
+import { calculateReports, calculateDailyReports, type Sale } from './reports';
 const source={orderId:'order',settlementId:'settlement:order',paymentId:'payment:order',operationId:'sale',settlementOperationId:'sale',recordedAt:'2026-11-01T00:00:00Z',cashSessionId:'session'};
 const names={a:'Kopi',b:'Kopi',c:'Teh'};
 describe('report aggregation',()=>{
@@ -20,4 +20,12 @@ describe('report aggregation',()=>{
   const free=freezeSettlement('free',[{unitIds:['a'],skuId:'z',skuPrice:100,toppingPrice:0,promo:{kind:'percent',value:10000,revision:1}}],{kind:'none'},0,0,'free');const paid=freezeSettlement('order',[{unitIds:['b','c'],skuId:'a',skuPrice:100,toppingPrice:0,promo:{kind:'amount',value:10,revision:1}}],{kind:'none'},0,0,'payment');const r=calculateReports({sales:[{source:{...source,orderId:'free',paymentId:null},settlement:free,names,method:null},{source,settlement:paid,names,method:'cash'}],refunds:[{source:{...source,refundId:'r'},settlement:paid,names,unitIds:['b','c'],method:'cash'}],classifications:[]});expect(r.totals).toMatchObject({promo:120,freeSettlements:1,paymentCount:1,refund:180,netReceipts:0,averagePayment:180});expect(r.skuByValue.find(x=>x.skuId==='z')).toMatchObject({freeUnits:1,sold:1,netBase:0});expect(r.skuByValue.map(x=>x.skuId)).toEqual(['a','z']);
  });
 
+});
+
+it('reconciles all additive daily totals, including a refund-only day and classification',()=>{
+ const settlement=freezeSettlement('order',[{unitIds:['a'],skuId:'sku',skuPrice:10000,toppingPrice:1000,promo:{kind:'amount',value:1000,revision:1}}],{kind:'none'},1000,500,'payment');
+ const input={sales:[{source:{...source,recordedAt:'2026-11-01T16:59:59Z'},settlement,names,method:'cash' as const}],refunds:[{source:{...source,recordedAt:'2026-11-01T17:00:00Z',operationId:'refund',refundId:'r'},settlement,names,unitIds:['a'],method:'cash' as const}],classifications:[{source:{...source,recordedAt:'2026-11-01T17:00:00Z'},from:'cash' as const,to:'qris' as const,amount:100,administrative:true}]};
+ const period=calculateReports(input),days=calculateDailyReports(input,'Asia/Jakarta');expect(days.map(d=>d.date)).toEqual(['2026-11-01','2026-11-02']);expect(days[1].totals.netValue).toBe(-settlement.totals.total);expect(days[1].methods[1].adjustment).toBe(100);
+ for(const key of Object.keys(period.totals) as (keyof typeof period.totals)[])if(key!=='averagePayment')expect(days.reduce((sum,d)=>sum+d.totals[key],0),key).toBe(period.totals[key]);
+ expect(days[0].totals.averagePayment).toBe(period.totals.averagePayment);expect(days[1].totals.averagePayment).toBe(0);
 });

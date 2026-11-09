@@ -1,14 +1,5 @@
 import type { CashReport } from './cash-report';
-type Cell=string|number|null;
-function cell(value:Cell):string {
- if(value===null) return '';
- if(typeof value==='number') {if(!Number.isSafeInteger(value)) throw new Error('Angka CSV tidak aman');return String(value);}
- // Spreadsheet programs may ignore whitespace/control characters before a formula.
- const first=[...value].find(ch=>ch.charCodeAt(0)>31 && !/\s/u.test(ch));
- const protectedText=first && '=+-@'.includes(first)?`'${value}`:value;
- return `"${protectedText.replaceAll('"','""')}"`;
-}
-function csv(rows:Cell[][]):string {return '\ufeff'+rows.map(row=>row.map(cell).join(',')).join('\r\n')+'\r\n';}
+import { csv, type Cell } from './csv';
 /** CSV is a scoped report, never a backup; incomplete evidence cannot be exported. */
 export function exportCashReportCsv(input:CashReport):{summary:string;ledger:string;segments:string} {
  if(input.status!=='complete') throw new Error('Ekspor ditahan: sumber laporan belum lengkap');

@@ -1,6 +1,6 @@
 import type { BusinessRecord } from '../domain/business-record';
 import { draftDateCode } from '../domain/draft';
-import { calculateReports, type Classification, type Refund, type Sale } from '../domain/reports';
+import { calculateReports, calculateDailyReports, type Classification, type Refund, type Sale } from '../domain/reports';
 import { canonical, type AtomicChange } from './commit';
 import type { BerrieDatabase } from './database';
 import { checkpoint } from './recovery';
@@ -23,6 +23,8 @@ export async function readInternalSalesReports(db:BerrieDatabase,storeId:string,
  if(!validId(storeId))throw new Error('Toko tidak sah');filter=structuredClone(filter);validateFilter(filter);
  const s=validateCheckpoint(await checkpoint(db));const changes=s.receipts.map(r=>JSON.parse(r.payload) as AtomicChange);const own=changes.filter(c=>c.storeId===storeId);
  if(filter.kind==='session'&&!s.state.some(r=>r.key===`cash-session:${filter.sessionId}`&&(r.value as BusinessRecord)?.recordType==='cash-session'&&((r.value as Extract<BusinessRecord,{recordType:'cash-session'}>).session.storeId===storeId)))throw new Error('Sesi tidak ditemukan');
+ const sessionRecord=filter.kind==='session'?s.state.find(r=>r.key===`cash-session:${filter.sessionId}`)?.value as Extract<BusinessRecord,{recordType:'cash-session'}>|undefined:undefined;
+ const zone=filter.kind==='calendar'?filter.zone:sessionRecord!.session.timeZone;
  const rows=new Map(s.state.map(r=>[r.key,r.value as BusinessRecord]));const origin=(key:string)=>own.find(c=>c.state.some(x=>x.key===key&&x.expectedRevision===null));
  const incomplete:{key:string;reason:string}[]=[];const sales:Sale[]=[];const refunds:Refund[]=[];const classifications:Classification[]=[];
  for(const r of s.state){const creator=origin(r.key);if(!creator)continue;const v=r.value as BusinessRecord;if(!v||typeof v!=='object'||!('recordType' in v)){incomplete.push({key:r.key,reason:'Record generik belum didukung'});continue;}if(v.recordType==='draft' && (v.schemaVersion!==2 || v.draft.channel!=='store'))incomplete.push({key:r.key,reason:'Draft legacy atau platform belum didukung'});if(v.recordType==='first-batch' && v.schemaVersion!==2)incomplete.push({key:r.key,reason:'Batch legacy belum didukung'});if(v.recordType==='refund-history')incomplete.push({key:r.key,reason:'Histori refund generik belum didukung'});}
@@ -38,5 +40,6 @@ export async function readInternalSalesReports(db:BerrieDatabase,storeId:string,
   if(correction?.recordType==='payment-corrections')for(const event of correction.corrections){const op=own.find(c=>(c.result as {correction?:unknown})?.correction && (c.result as {correction:unknown}).correction && canonical((c.result as {correction:unknown}).correction)===canonical(event));if(!op){incomplete.push({key:`payment-corrections:${orderId}`,reason:'Operasi koreksi tidak tersedia'});continue;}if(selected(filter,event.recordedAt,event.executionSessionId??event.cashSessionId))classifications.push({source:{...source,operationId:op.operationId,recordedAt:event.recordedAt,cashSessionId:event.executionSessionId??event.cashSessionId},from:event.from,to:event.to,amount:event.amount,administrative:!!event.executionSessionId});}
  }
  incomplete.sort((a,b)=>a.key.localeCompare(b.key)||a.reason.localeCompare(b.reason));
- return structuredClone({filter,storeId,scope:'settlement batch pertama channel Toko',checkpoint:{schema:s.schema,boundary:s.sequences},status:incomplete.length?'incomplete':'complete',incomplete,report:incomplete.length?null:calculateReports({sales,refunds,classifications})});
+ const events={sales,refunds,classifications};
+ return structuredClone({filter,storeId,zone,scope:'settlement batch pertama channel Toko',checkpoint:{schema:s.schema,boundary:s.sequences},status:incomplete.length?'incomplete':'complete',incomplete,report:incomplete.length?null:{...calculateReports(events),daily:calculateDailyReports(events,zone)}});
 }
