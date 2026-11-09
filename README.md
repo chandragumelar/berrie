@@ -1,5 +1,7 @@
 # Berrie · Prototipe Sites
 
+**Pengaturan D-81:** navigasi berkelompok, draft, detail channel, data dan preview; [review dan batas simulasi](REVIEW-PENGATURAN-D81.md).
+
 **Stok / Rekap D-80:** pemantauan per grup, penyesuaian dan rekap tiga tahap; [hasil dan batas pemeriksaan](REVIEW-STOK-REKAP-D80.md).
 
 **Menu D-79:** daftar induk, editor satu simpan, preview dan edit massal; [catatan pemeriksaan](REVIEW-MENU-D79.md). Folder `foundation/` adalah snapshot scaffold produksi dengan perintah dan konfigurasi sendiri, bukan bagian pemeriksaan prototipe Sites.

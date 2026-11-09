@@ -11,13 +11,13 @@ import {InlineChoice} from './taxonomy-workspace';
 import {VariantFields} from './variant-fields';
 import {VariablePicker} from './variable-picker';
 
-type Props={initial:MenuRow[];isNew:boolean;state:State;busy:boolean;onSave:(action:Action)=>Promise<State|undefined>;onClose:()=>void;onDirty:(dirty:boolean)=>void;onCreateLabel:(kind:'category'|'type',name:string)=>Promise<boolean>;onCheckResult?:()=>void};
-export function MenuDetail({initial,isNew,state,busy,onSave,onClose,onDirty,onCreateLabel,onCheckResult}:Props){
+type Props={initialChannel?:Channel|null;initial:MenuRow[];isNew:boolean;state:State;busy:boolean;onSave:(action:Action)=>Promise<State|undefined>;onClose:()=>void;onDirty:(dirty:boolean)=>void;onCreateLabel:(kind:'category'|'type',name:string)=>Promise<boolean>;onCheckResult?:()=>void};
+export function MenuDetail({initialChannel,initial,isNew,state,busy,onSave,onClose,onDirty,onCreateLabel,onCheckResult}:Props){
  const [draft,setDraft]=useState(()=>structuredClone(initial));
  const [catalogBase]=useState(()=>catalogDraft(state)),[catalogVersion]=useState(()=>JSON.stringify(state.catalog));
  const [variantInitial]=useState(()=>{if(isNew)return {base:'',variables:[] as MenuVariable[],error:''};try{return optionPriceDraft(initial[0].variables??[],initial.filter(r=>!r.archived));}catch{return {base:initial[0].price,variables:initial[0].variables??[],error:'Harga lama belum dapat diubah menjadi tambahan pilihan.'};}});
  const [base,setBase]=useState(variantInitial.base),[variables,setVariables]=useState(variantInitial.variables),[variantChanged,setVariantChanged]=useState(isNew),[dirty,setDirty]=useState(isNew),[error,setError]=useState(''),[pending,setPending]=useState(''),[confirmExit,setConfirmExit]=useState(false);
- const [previewChannel,setPreviewChannel]=useState<Channel>('Toko'),[previewValues,setPreviewValues]=useState<Record<string,string[]>>({});
+ const [previewChannel,setPreviewChannel]=useState<Channel>(initialChannel&& (initialChannel==='Toko'||state.settings.enabledChannels?.includes(initialChannel))?initialChannel:'Toko'),[previewValues,setPreviewValues]=useState<Record<string,string[]>>({});
  const active=draft.filter(r=>!r.archived),first=active[0];
  let preview: {variables:MenuVariable[];price:number}|null=null;
  try{

@@ -734,3 +734,18 @@ html[data-text-scale="200"] .item-dialog { padding:24px 16px!important; }
 
 .stock-list td { height:64px; }
 @media(max-width:899px) { .stock-workspace:has(.stock-layout.has-detail)>.workspace-search { display:none; } }
+.settings-nav > div { display: flex; flex-direction: column; }
+.settings-nav h3 { margin: 16px 12px 4px; }
+.settings-back { display: none; }
+@media (max-width: 899px) {
+  :root .settings-nav { display: flex; flex-direction: column; }
+  .settings-grid:not(.settings-detail-open) .settings-panel { display: none; }
+  .settings-detail-open .settings-nav { display: none; }
+  .settings-back { display: inline-flex; align-self: flex-start; }
+}
+@media (min-width: 900px) {
+  :root .settings-grid { grid-template-columns: 220px minmax(0,1fr); }
+  :root .settings-nav { flex-direction: column; }
+}
+.settings-preview-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; }
+@media (max-width: 700px) { .settings-preview-layout { grid-template-columns: 1fr; } }

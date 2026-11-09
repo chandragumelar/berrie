@@ -23,7 +23,7 @@ export function MenuEditor({state,sku,template,busy,onSave,onPromo}:{state:State
   {selectedType==='Paket'&&<p className="hint">Tipe Paket adalah label menu dengan stok sendiri.</p>}
   {selectedType==='Promo'&&<p className="hint">Diskon diatur melalui Atur promo SKU setelah menu disimpan.</p>}
   <Choice label="Kategori" value={category} options={[...new Set(['Tanpa kategori',...(state.settings.menuCategories??[]),...source?.category?[source.category]:[]])]} onChange={setCategory}/>
-  {!state.settings.menuCategories?.length&&<p className="hint">Tambahkan kategori di Pengaturan → Kategori menu.</p>}
+  {!state.settings.menuCategories?.length&&<p className="hint">Tambahkan kategori di Menu & Stok → Kelola kategori & tipe.</p>}
   <Tick label="Menu ini punya pilihan ukuran / rasa" value={hasVariants} onChange={v=>{setHasVariants(v);if(!v&&!sku)setVariants([variants[0]]);}} disabled={!!sku||!!template}/>
   <section className="menu-variant-section" aria-label="Varian / ukuran">
    {variants.map((row,index)=><div className="menu-variant-row" key={row.key}>
