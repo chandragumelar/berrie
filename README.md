@@ -1,5 +1,7 @@
 # Berrie · Prototipe Sites
 
+**Stok / Rekap D-80:** pemantauan per grup, penyesuaian dan rekap tiga tahap; [hasil dan batas pemeriksaan](REVIEW-STOK-REKAP-D80.md).
+
 **Menu D-79:** daftar induk, editor satu simpan, preview dan edit massal; [catatan pemeriksaan](REVIEW-MENU-D79.md). Folder `foundation/` adalah snapshot scaffold produksi dengan perintah dan konfigurasi sendiri, bukan bagian pemeriksaan prototipe Sites.
 
 **Pesanan terbaru D-78 · 31 Oktober 2026:** Aktif/Tersimpan, dua filter AND awal Semua, daftar operasional dan detail bersama tablet40/60 (≥900) / HP detail penuh. [Review D-78](REVIEW-PESANAN-D78.md). Kasir D-76/D-77 dipertahankan. Data memori. Commit dan PR D-78 diotorisasi pemilik pada tindak lanjut; merge oleh pemilik, tanpa deployment/versi layanan baru.
@@ -51,7 +53,7 @@ D-76: kartu sederhana langsung menambah satu draft dengan Urungkan satu unit ter
 | `public/favicon.svg` | Favicon |
 | `vendor/` | Stylesheet vendor dan lisensi berpasangan |
 
-`.openai/hosting.json` mempertahankan `project_id=appgprj_6ac54219b9248191bf551b9871d78958`. Root `/Users/icang/berrie` bukan Git, `berrie-site` mempunyai Git sendiri. Histori bukti/revisi di register/tasks/review bukan cabang UI yang dapat diaktifkan. Tidak membuat salinan UI lama atau mengubah histori Git.
+`.openai/hosting.json` mempertahankan `project_id=appgprj_6ac54219b9248191bf551b9871d78958`. Root `/Users/icang/berrie` dan `berrie-site` adalah repository Git terpisah; root belum memiliki remote. Histori bukti/revisi di register/tasks/review bukan cabang UI yang dapat diaktifkan. Tidak membuat salinan UI lama atau mengubah histori Git.
 
 `build/`, `scripts/`, `vite.config.ts`, konfigurasi/framework/manifes/lockfile dan `.openai/hosting.json` mengatur runtime Sites. `lib/connector*`, `app/chatgpt-auth.ts`, `components/connector-error.tsx` dukungan Sites opsional, bukan fitur POS. `db/`, `drizzle/`, `drizzle.config.ts`, `cloudflare-env.d.ts` mendukung tooling starter, bukan database bisnis prototipe. `node_modules`, `dist`, `.next`, `.wrangler`, `.sites-runtime` dan cache adalah hasil lokal diabaikan.
 
