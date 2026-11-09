@@ -65,7 +65,7 @@ export function validateCashCountTransitions(receipts:OperationRow[],byKey:Map<s
    const kind=v.change.kind;
    if(kind==='cash-count.save') {if(current!=='open') throw new Error('Sesi tidak tersedia');current='counting';}
    else if(kind==='cash-count.revise') {if(current!=='counting') throw new Error('Hitungan tidak aktif');}
-   else if(kind==='cash-count.cancel') {if(current!=='counting') throw new Error('Hitungan tidak aktif');current='open';}
+   else if(kind==='cash-count.cancel' || kind==='cash-count.handover') {if(current!=='counting') throw new Error('Hitungan tidak aktif');current='open';}
    else if(kind==='cash-count.close') {if(current!=='counting') throw new Error('Hitungan tidak aktif');current='closed';}
    else if(v.revision>0 && current!=='open') throw new Error('Mutasi sesi ditahan');
    status.set(v.revision,current);
