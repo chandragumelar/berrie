@@ -50,6 +50,7 @@ it('beberapa handover, selisih positif dan negatif serta alasan segmen terakhir'
  await expect(changeCashCount(db,'close',base(5,4),meta('close',7,'C'),locks)).rejects.toThrow();
  await changeCashCount(db,'close',{...base(5,4),reason:'kurang'},meta('close',7,'C'),locks);
  expect((await readCustodySegments(db,'store',id)).map(s=>s.difference)).toEqual([10,-5,-5]);
+ const {readInternalCashReport}=await import('./cash-report');const report=await readInternalCashReport(db,'store',id);expect(report.report.segments.map(s=>s.difference)).toEqual([10,-5,-5]);expect(report.report.summary).toMatchObject({expected:100,closingCount:100,closingDifference:0});
  }finally{await db.delete();}});
 
 it.each(['sequences','state','audit','outbox','receipts'] as const)('gagal menulis %s membatalkan serah-terima atomik',async table=>{const db=new BerrieDatabase(crypto.randomUUID());try {
