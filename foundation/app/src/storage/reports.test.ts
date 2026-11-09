@@ -20,6 +20,8 @@ await openCashSession(db,{sessionId:d.cashSessionId,number:'1',initialCustodian:
 }
 
 import { readInternalSalesReports } from './reports';
+import { readInternalCashReport } from './cash-report';
+import { exportCashReportCsv } from '../domain/cash-report-csv';
 import { payDraftCash, settleDraftFree } from './confirm-first-batch';
 import { cancelPaidUnits, refundCancelledUnits } from './paid-cancellations';
 
@@ -45,6 +47,7 @@ it('keeps closed session classification and attributes later adjustment and refu
  await openCashSession(db,{sessionId:current,number:'2',initialCustodian:'actor',openingAmount:30000,timeZone:'Asia/Jakarta'},meta('next',9),locks);
  await adjustClosedPaymentMethod(db,{orderId:d.orderId,expectedRevision:0,sourceSessionId:d.cashSessionId,expectedSourceRevision:4,executionSessionId:current,expectedSessionRevision:0,method:'cash',reason:'Koreksi',evidenceReference:'Bukti'},meta('adjust',10),locks);
  await refundServedUnits(db,{orderId:d.orderId,expectedRefundRevision:null,expectedServingRevision:0,expectedCorrectionRevision:1,expectedSessionRevision:1,selection:[{itemId:d.items[0].id,quantity:1}],method:'cash',reason:'Rusak',moneyReturned:true,returnStock:null,sourceSessionId:d.cashSessionId,expectedSourceRevision:4,executionSessionId:current},meta('refund',11),locks);
+ const oldCash=await readInternalCashReport(db,'store',d.cashSessionId),newCash=await readInternalCashReport(db,'store',current);expect(oldCash.report.summary).toMatchObject({sales:27500,methodCorrection:-27500,expected:0,closingCount:0});expect(newCash.report.summary).toMatchObject({opening:30000,administrativeAdjustment:27500,refunds:13750,expected:43750});expect(newCash.report.ledger).toHaveLength(3);expect(newCash.report.ledger[1]).toMatchObject({paymentId:expect.any(String),originSessionId:d.cashSessionId});expect(newCash.report.ledger[2]).toMatchObject({paymentId:expect.any(String),refundId:expect.any(String)});expect(exportCashReportCsv(newCash).ledger).toContain(newCash.report.ledger[2].refundId!);
  const after=await readInternalSalesReports(db,'store',originFilter),currentReport=await readInternalSalesReports(db,'store',{kind:'session',sessionId:current});expect(after.report).toEqual(old.report);expect(currentReport.report?.totals).toMatchObject({bill:0,refund:13750,netReceipts:-13750});expect(currentReport.report?.methods.find(x=>x.method==='cash')).toMatchObject({adjustment:27500,refunds:13750});expect((await checkpoint(db)).state.filter(r=>r.key===`cash-session:${d.cashSessionId}`||r.key===`cash-count:${d.cashSessionId}`)).toEqual(closed.state.filter(r=>r.key===`cash-session:${d.cashSessionId}`||r.key===`cash-count:${d.cashSessionId}`));
  }finally{await db.delete();}});
 
@@ -60,11 +63,12 @@ it('marks generic data incomplete, isolates stores, and rejects corrupt checkpoi
  const filter={kind:'calendar' as const,start:'2026-11-01',end:'2026-11-02',zone:'Asia/Jakarta'};expect(await readInternalSalesReports(db,'store',filter)).toMatchObject({status:'incomplete',report:null,incomplete:[{key:'order:unknown'}]});expect((await readInternalSalesReports(db,'other',filter)).status).toBe('complete');await db.state.delete('order:unknown');await expect(readInternalSalesReports(db,'store',filter)).rejects.toThrow();
  }finally{await db.delete();}});
 
-it('platform draft is explicitly incomplete',async()=>{const db=new BerrieDatabase(crypto.randomUUID());try{const d=draft();d.channel='gofood';d.channelAccountId='00000000-0000-4000-8000-000000000010';d.externalOrderId='platform';await setup(db,d);const result=await readInternalSalesReports(db,'store',{kind:'session',sessionId:d.cashSessionId});expect(result).toMatchObject({status:'incomplete',report:null,incomplete:[{key:`draft:${d.orderId}`} ]});}finally{await db.delete();}});
+it('platform draft is explicitly incomplete',async()=>{const db=new BerrieDatabase(crypto.randomUUID());try{const d=draft();d.channel='gofood';d.channelAccountId='00000000-0000-4000-8000-000000000010';d.externalOrderId='platform';await setup(db,d);const result=await readInternalSalesReports(db,'store',{kind:'session',sessionId:d.cashSessionId});expect(result).toMatchObject({status:'incomplete',report:null,incomplete:[{key:`draft:${d.orderId}`} ]});const cash=await readInternalCashReport(db,'store',d.cashSessionId);expect(cash.status).toBe('incomplete');expect(()=>exportCashReportCsv(cash)).toThrow();}finally{await db.delete();}});
 
 it('applies a chain of corrections without changing sales or duplicating classification',async()=>{const db=new BerrieDatabase(crypto.randomUUID());try{
  const {correctPaymentMethod}=await import('./payment-correction'),{d,input}=await setup(db);await payDraftCash(db,{...input,expectedSessionRevision:0,received:50000},meta('pay',4),locks,now);
  await correctPaymentMethod(db,{orderId:d.orderId,expectedRevision:null,expectedSessionRevision:1,method:'qris',reason:'Salah'},meta('one',5),locks);
  await correctPaymentMethod(db,{orderId:d.orderId,expectedRevision:0,expectedSessionRevision:2,method:'transfer',reason:'Salah lagi'},meta('two',6),locks);
+ const cash=await readInternalCashReport(db,'store',d.cashSessionId);expect(cash.report.summary).toMatchObject({sales:27500,methodCorrection:-27500,expected:0});expect(cash.report.ledger).toHaveLength(4);
  const result=await readInternalSalesReports(db,'store',{kind:'session',sessionId:d.cashSessionId});expect(result.report?.totals).toMatchObject({bill:27500,netReceipts:27500,paymentCount:1});expect(result.report?.methods.map(x=>x.net)).toEqual([0,0,27500,0]);expect(result.report?.details.classifications).toHaveLength(2);
  }finally{await db.delete();}});
