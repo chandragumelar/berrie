@@ -18,6 +18,12 @@ export interface CustodySegment {
 const text=(x:unknown)=>typeof x==='string' && !!x.trim() && x.length<=200;
 const reason=(x:unknown)=>typeof x==='string' && !!x.trim() && x.length<=500;
 function safe(value:bigint):number {const n=Number(value);if(!Number.isSafeInteger(n)) throw new Error('Perhitungan segmen melampaui batas aman');return n;}
+export function compareCashCount(segment:CustodySegment,amount:number,expected:number) {
+ const difference=safe(BigInt(amount)-BigInt(expected));
+ const segmentExpected=safe(BigInt(segment.openingPhysical)+BigInt(expected)-BigInt(segment.openingExpected));
+ const segmentDifference=safe(BigInt(amount)-BigInt(segmentExpected));
+ return {difference,segmentExpected,segmentDifference};
+}
 /** Reconstruct only explicit custody evidence, using ledger balances at committed boundaries. */
 export function custodySegments(session:CashSession,history:CashCountHistory|null):CustodySegment[] {
  let custodian=session.initialCustodian,physical=session.openingAmount,expected=session.openingAmount,boundary:CountBoundary[]|null=null;

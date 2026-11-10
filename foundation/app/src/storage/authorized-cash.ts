@@ -4,6 +4,13 @@ import type { CashReport } from '../domain/cash-report';
 import { canonical, copyInput, type LockProvider } from './commit';
 import { openCashSession, moveCash, readCashBalance, type OpenCashInput, type MoveCashInput, type CashMetadata } from './cash-sessions';
 import { readInternalCashReport } from './cash-report';
+import { changeCashCount, type CountInput } from './cash-count';
+import { checkpoint } from './recovery';
+import { validateCheckpoint } from './validate-checkpoint';
+import { compareCashCount, custodySegments, type CashCountHistory } from '../domain/cash-count';
+import { cashBalance, type CashSession } from '../domain/cash-session';
+import { cashMovements } from './cash-sessions';
+import type { AtomicChange } from './commit';
 import type { BerrieDatabase } from './database';
 import type { LocalPinSecurity, PinIdentity } from './local-pin';
 import type { OfflinePermitStorage } from './offline-permit';
@@ -12,7 +19,9 @@ type Denied={status:'denied'}|{status:'approval-required'};
 type MutationResult=Denied|{status:'ok';sessionId:string;revision:number};
 type ReadResult<T>=Denied|{status:'ok';value:T};
 export interface CashOperation { operationId:string; localSequence:number; recordedAt:string }
-type Action='open'|'move'|'balance'|'report'|'csv';
+type Action='open'|'move'|'balance'|'report'|'csv'|'count'|'count-read';
+type CloseCountInput=Pick<CountInput,'sessionId'|'expectedSessionRevision'|'expectedCountRevision'> & {amount?:number;reason?:string|null};
+type CountResult={sessionId:string;sessionRevision:number;countRevision:number};
 const direct:LockProvider={request:async(_name,fn)=>fn()};
 const exact=(value:unknown,keys:string[])=>!!value && typeof value==='object' && !Array.isArray(value) && Object.keys(value).sort().join(',')===[...keys].sort().join(',');
 
@@ -31,10 +40,10 @@ export class AuthorizedCash {
     if(canonical(first.permit)!==canonical(current.permit) || canonical(first.policy ?? null)!==canonical(current.policy ?? null) || current.clockFault || current.permit.payload.version!==2 || !current.policy) return {status:'denied'} as const;
     const p=current.permit.payload, actor=current.policy.actors.find(a=>a.id===identity.actorId);
     if(!actor || !actor.active || actor.role!==p.role || current.policy.version!==p.policyVersion) return {status:'denied'} as const;
-    const mutation=action==='open'||action==='move';
-    const guard=()=>{checkCaptured();pinGuard();const now=current.assertTime();if(mutation && now>=permitExpiry(p)) throw new Error('Permit kedaluwarsa');};
+    const mutation=action==='open'||action==='move'||action==='count';
+    const guard=()=>{checkCaptured();pinGuard();const now=current.assertTime();if((action==='open'||action==='move'||actor.role==='staff') && now>=permitExpiry(p)) throw new Error('Permit kedaluwarsa');};
     guard();
-    if(!mutation && actor.role!=='owner') return {status:'denied'} as const;
+    if(!mutation && action!=='count-read' && actor.role!=='owner') return {status:'denied'} as const;
     if(action==='move' && actor.role==='staff') {
      const mode=current.policy.matrix['cash-adjustment'];
      if(mode==='approval') return {status:'approval-required'} as const;
@@ -81,4 +90,40 @@ export class AuthorizedCash {
   const i={...identity},id=sessionId;
   return this.execute(i,'csv',async meta=>exportCashReportCsv(await readInternalCashReport(this.db,meta.storeId,id)));
  }
+ private countMutation(identity:PinIdentity,action:'save'|'revise'|'cancel'|'close',input:CloseCountInput,operation:CashOperation):Promise<Denied|({status:'ok'} & CountResult)> {
+  let i:PinIdentity,d:CloseCountInput,o:CashOperation;
+  try {
+   i=copyInput(identity) as PinIdentity;d=copyInput(input) as CloseCountInput;o=copyInput(operation) as CashOperation;canonical({i,d,o});
+   const base=['sessionId','expectedSessionRevision','expectedCountRevision'];
+   const keys=action==='save'||action==='revise'?[...base,'amount']:base;
+   if(!(exact(d,keys) || action==='close' && exact(d,[...base,'reason'])) || !exact(o,['operationId','localSequence','recordedAt'])) throw new Error('Input tidak sah');
+  } catch {return Promise.resolve({status:'denied'});}
+  return this.execute(i,'count',async(meta,guard)=>{
+   const result=await changeCashCount(this.db,action,d,{...o,...meta},direct,guard,meta.actorId) as CountResult;
+   return {sessionId:result.sessionId,sessionRevision:result.sessionRevision,countRevision:result.countRevision};
+  }).then(r=>r.status==='ok'?{status:'ok',...r.value}:r);
+ }
+ saveCount(identity:PinIdentity,input:CloseCountInput,operation:CashOperation) {return this.countMutation(identity,'save',input,operation);}
+ reviseCount(identity:PinIdentity,input:CloseCountInput,operation:CashOperation) {return this.countMutation(identity,'revise',input,operation);}
+ cancelCount(identity:PinIdentity,input:CloseCountInput,operation:CashOperation) {return this.countMutation(identity,'cancel',input,operation);}
+ close(identity:PinIdentity,input:CloseCountInput,operation:CashOperation) {return this.countMutation(identity,'close',input,operation);}
+ count(identity:PinIdentity,sessionId:string) {
+  let i:PinIdentity,id:string;
+  try {i=copyInput(identity) as PinIdentity;id=sessionId;canonical({i,id});} catch {return Promise.resolve({status:'denied'} as const);}
+  return this.execute(i,'count-read',async meta=>{
+   const snapshot=validateCheckpoint(await checkpoint(this.db));
+   const row=snapshot.state.find(r=>r.key===`cash-session:${id}`),record=row?.value as {recordType?:string;session?:CashSession}|undefined;
+   if(record?.recordType!=='cash-session' || !record.session || record.session.id!==id || record.session.storeId!==meta.storeId) throw new Error('Sesi tidak ditemukan');
+   const count=snapshot.state.find(r=>r.key===`cash-count:${id}`),history=(count?.value as {history?:CashCountHistory}|undefined)?.history;
+   const segment=custodySegments(record.session,history ?? null).at(-1)!;
+   if(segment.custodian!==meta.actorId || segment.closingOperationId!==null) throw new Error('Penanggung jawab tidak sesuai');
+   const last=history?.events.at(-1),active=last && (last.action==='save'||last.action==='revise')?last:undefined;
+   if(active && (active.purpose!=='close'||active.actorId!==meta.actorId)) throw new Error('Hitungan tidak sesuai');
+   const context={sessionId:id,sessionRevision:row!.revision,countRevision:count?.revision ?? null};
+   if(!active) return {...context,active:null};
+   const expected=cashBalance(cashMovements(snapshot.receipts.map(r=>JSON.parse(r.payload) as AtomicChange),id),record.session);
+   return {...context,active:{amount:active.amount,expected,...compareCashCount(segment,active.amount!,expected)}};
+  });
+ }
+
 }
