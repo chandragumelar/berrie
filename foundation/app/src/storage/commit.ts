@@ -73,7 +73,7 @@ export async function commitChange(db:BerrieDatabase, input:AtomicChange, locks:
  const change=copyInput(input) as AtomicChange;
  return withWriterTransaction(db,locks,commit=>commit(change));
 }
-export function withWriterTransaction<T>(db:BerrieDatabase, locks:LockProvider, fn:(commit:(change:AtomicChange)=>Promise<unknown>)=>Promise<T>):Promise<T> {
+export function withWriterTransaction<T>(db:BerrieDatabase, locks:LockProvider, fn:(commit:(change:AtomicChange)=>Promise<unknown>)=>Promise<T>, beforeCommit?:()=>void):Promise<T> {
  if(!locks || typeof locks.request!=='function') throw new Error('Penguncian penulis tidak tersedia');
- return locks.request(`berrie-writer:${db.name}`,()=>db.transaction('rw',[db.state,db.ledger,db.audit,db.outbox,db.receipts,db.sequences],()=>fn(change=>commitInTransaction(db,change))));
+ return locks.request(`berrie-writer:${db.name}`,()=>db.transaction('rw',[db.state,db.ledger,db.audit,db.outbox,db.receipts,db.sequences],async()=>{const result=await fn(change=>commitInTransaction(db,change));beforeCommit?.();return result;}));
 }

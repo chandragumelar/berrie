@@ -42,9 +42,33 @@ export class LocalPinSecurity {
   return monotonic-anchor.monotonic<row.cooldownDuration;
  }
  close():void { this.token=null; this.db.close(); }
+ /** Capture the live session before an operation waits for any lock. */
+ captureIdentity(identity:PinIdentity):()=>void {
+  const token=this.token;
+  if(!token || token.identity!==identityKey(identity)) throw new Error('Sesi PIN tidak sah');
+  return ()=>{if(this.token!==token) throw new Error('Sesi PIN berubah');};
+ }
  private run<T>(fn:()=>Promise<T>):Promise<T> {
   if(!this.locks || typeof this.locks.request!=='function') throw new Error('Penguncian tidak tersedia');
   return this.locks.request(`berrie-security:${this.db.name}`,()=>this.db.transaction('rw',[this.db.credentials,this.db.session],fn));
+ }
+ /** Internal integration boundary: hold this lock before the permit and writer locks. */
+ withAuthorizationLock<T>(fn:(check:(identity:PinIdentity)=>Promise<()=>void>)=>Promise<T>):Promise<T> {
+  if(!this.locks || typeof this.locks.request!=='function') throw new Error('Penguncian tidak tersedia');
+  return this.locks.request(`berrie-security:${this.db.name}`,()=>fn(identity=>this.authorizationCheck(identity)));
+ }
+ private async authorizationCheck(identity:PinIdentity):Promise<()=>void> {
+  const token=this.token;
+  if(!token || token.identity!==identityKey(identity)) throw new Error('Sesi PIN tidak sah');
+  const lastActivity=await this.db.transaction('rw',[this.db.credentials,this.db.session],async()=>{
+   const {wall,fault}=this.sample(), s=await this.session(wall,fault);
+   if(s.identity!==token.identity || s.generation!==token.generation || s.clockFault || wall-s.lastActivity>=LOCK_MS || this.token!==token) {
+    await this.db.session.put(s); return null;
+   }
+   await this.db.session.put(s); return s.lastActivity;
+  });
+  if(lastActivity===null) throw new Error('Sesi PIN tidak sah');
+  return ()=>{const {wall,fault}=this.sample();if(this.token!==token || fault || wall-lastActivity>=LOCK_MS || wall<lastActivity) throw new Error('Sesi PIN tidak sah');};
  }
  private async session(now:number,fault:boolean):Promise<SessionRow> {
   const s=await this.db.session.get('session') ?? {key:'session' as const,generation:0,identity:null,lastActivity:now,lastTime:now,clockFault:false};
