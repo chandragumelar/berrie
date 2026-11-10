@@ -22,7 +22,7 @@ export function makeCashCountChange(snapshot:Snapshot,action:CountAction,data:Co
  if(data.purpose!==undefined && data.purpose!=='handover') throw new Error('Tujuan hitungan tidak sah');
  const purposeKey=purpose==='handover'?['purpose']:[];
  if(action==='save' || action==='revise') {if(!validKeys([...base,...purposeKey,'amount']) || !Number.isSafeInteger(data.amount) || (data.amount as number)<0) throw new Error('Nilai hitungan tidak sah');}
- else if(action==='cancel') {if(!validKeys([...base,...purposeKey])) throw new Error('Intent batal tidak sah');}
+ else if(action==='cancel') {if(!validKeys([...base,...purposeKey],purpose==='handover'?['reason']:[]) || !validReason(data.reason)) throw new Error('Intent batal tidak sah');}
  else if(action==='close') {if(purpose!=='close' || !validKeys(base,['reason']) || !validReason(data.reason)) throw new Error('Alasan tidak sah');}
  else if(action==='handover') {if(purpose!=='handover' || !validKeys([...base,'purpose','incoming','received'],['reason','withoutOutgoingReason']) || typeof data.incoming!=='string' || !data.incoming.trim() || data.incoming.length>200 || !Number.isSafeInteger(data.received) || data.received!<0 || !validReason(data.reason) || !validReason(data.withoutOutgoingReason)) throw new Error('Intent serah-terima tidak sah');}
  else throw new Error('Aksi hitungan tidak sah');
@@ -45,7 +45,7 @@ export function makeCashCountChange(snapshot:Snapshot,action:CountAction,data:Co
  const amount=final?active!.amount:action==='save' || action==='revise'?data.amount as number:null;
  const comparison=expected===null?null:compareCashCount(current,amount!,expected);
  const difference=comparison?.difference ?? null,segmentExpected=comparison?.segmentExpected ?? null,segmentDifference=comparison?.segmentDifference ?? null;
- const reason=final?data.reason ?? null:null;
+ const reason=final || action==='cancel' && purpose==='handover'?data.reason ?? null:null;
  if(action==='close' && ((difference!==0 || segmentDifference!==0) && reason===null)) throw new Error('Alasan selisih wajib');
  if(action==='close' && history.events.some(e=>e.action==='handover') && meta.actorId!==current.custodian) throw new Error('Penanggung jawab tutup tidak sesuai');
  let handover:CountEvent['handover'];
@@ -63,9 +63,11 @@ export function makeCashCountChange(snapshot:Snapshot,action:CountAction,data:Co
  return {operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:`cash-count.${action}`,targetId:data.sessionId,payload:{data,metadata:meta,boundary:event.boundary},state:[{key:sessionKey(data.sessionId),expectedRevision:row.revision,value:record},{key:countKey(data.sessionId),expectedRevision:count?.revision ?? null,value:{recordType:'cash-count',schemaVersion:1,history:next}}],ledger:[],audit:[{id:`cash-count-audit:${operationId}`,operationId,value:{sessionId:data.sessionId,event,policyVersion:meta.policyVersion}}],outbox:{id:`cash-count-outbox:${operationId}`,operationId,value:{sessionId:data.sessionId,action}},result:{sessionId:data.sessionId,sessionRevision:row.revision+1,countRevision:(count?.revision ?? -1)+1,event}};
 }
 /** Internal command; actor and policy metadata do not authorize access. */
-export function changeCashCount(db:BerrieDatabase,action:CountAction,input:CountInput,metadata:CashMetadata,locks:LockProvider=navigator.locks,beforeCommit?:()=>void,requiredCustodian?:string):Promise<unknown> {
+export function changeCashCount(db:BerrieDatabase,action:CountAction,input:CountInput,metadata:CashMetadata,locks:LockProvider=navigator.locks,beforeCommit?:()=>void,requiredCustodian?:string,authorize?:(snapshot:Snapshot,replay:boolean)=>void):Promise<unknown> {
  const data=copyInput(input) as CountInput,meta=copyInput(metadata) as CashMetadata;canonical({action,data,metadata:meta});
  return withWriterTransaction(db,locks,async commit=>{
+  const prior=await db.receipts.get(meta.operationId);
+  if(authorize) authorize(validateCheckpoint(await checkpoint(db)),!!prior);
   if(requiredCustodian) {
    const snapshot=validateCheckpoint(await checkpoint(db));
    const record=snapshot.state.find(r=>r.key===sessionKey(data.sessionId))?.value as {recordType?:string;session?:CashSession}|undefined;
@@ -74,7 +76,6 @@ export function changeCashCount(db:BerrieDatabase,action:CountAction,input:Count
    const active=history?.history?.events.at(-1);
    if(!await db.receipts.get(meta.operationId) && action!=='save' && active?.actorId!==requiredCustodian) throw new Error('Actor hitungan tidak sesuai');
   }
-  const prior=await db.receipts.get(meta.operationId);
   if(prior) {const c=JSON.parse(prior.payload) as AtomicChange,p=c.payload as {data:unknown;metadata:unknown};if(c.kind!==`cash-count.${action}` || canonical({data:p.data,metadata:p.metadata})!==canonical({data,metadata:meta})) throw new Error('Konflik operation ID');return prior.result;}
   const snapshot=validateCheckpoint(await checkpoint(db));return commit(makeCashCountChange(snapshot,action,data,meta));
  },beforeCommit);

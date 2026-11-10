@@ -152,3 +152,111 @@ it('pemegang baru menutup sesi dengan histori handover tanpa mengambil alih',asy
  await openCashSession(s.db,{...opening,initialCustodian:'other'},meta('open',1,'other'),s.lock);await changeCashCount(s.db,'save',{sessionId,expectedSessionRevision:0,expectedCountRevision:null,purpose:'handover',amount:1200},meta('handover-count',2,'other'),s.lock);await changeCashCount(s.db,'handover',{sessionId,expectedSessionRevision:1,expectedCountRevision:0,purpose:'handover',incoming:'actor',received:1200},meta('handover',3,'actor'),s.lock);
  expect((await s.gateway.saveCount(s.identity,{sessionId,expectedSessionRevision:2,expectedCountRevision:1,amount:1200},op('count',4))).status).toBe('ok');expect((await s.gateway.close(s.identity,{sessionId,expectedSessionRevision:3,expectedCountRevision:2},op('close',5))).status).toBe('ok');
  }finally{s.close();}});
+
+async function handoverActors(s:Awaited<ReturnType<typeof setup>>,otherRole:'staff'|'owner'='staff') {
+ const other={...s.identity,actorId:'other'};
+ const policy={...s.policy,version:2,actors:[...s.policy.actors,{id:'other',role:otherRole,active:true}]};
+ const hash=await policyHash(policy);let sequence=1;
+ await s.pin.installVerifier(other,await createPinVerifier('654321',MIN_ITERATIONS));
+ async function switchTo(which:'actor'|'other') {
+  const identity=which==='actor'?s.identity:other,role=which==='actor'?s.policy.actors[0].role:otherRole;
+  const payload={...s.p,version:2 as const,actorId:identity.actorId,role,sequence:++sequence,policyVersion:2,policyHash:hash};
+  await s.permit.install(await s.sign(payload),identity,policy);
+  expect(await s.pin.unlock(identity,which==='actor'?'123456':'654321')).toBe('unlocked');
+  return identity;
+ }
+ await switchTo('actor');return {other,switchTo};
+}
+it.each(['staff','owner'] as const)('serah-terima berizin staf ke %s memakai satu sesi PIN',async role=>{const s=await setup('staff');try{
+ const a=await handoverActors(s,role);await s.gateway.open(s.identity,opening,op('open',1));
+ expect(await s.gateway.handoverCount(s.identity,sessionId)).toEqual({status:'ok',value:{sessionId,sessionRevision:0,countRevision:null,active:null}});
+ const count={sessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:0};
+ expect((await s.gateway.saveHandoverCount(s.identity,count,op('count',2))).status).toBe('ok');
+ expect((await s.gateway.reviseHandoverCount(s.identity,{sessionId,expectedSessionRevision:1,expectedCountRevision:0,amount:1200},op('revise',3))).status).toBe('ok');
+ await a.switchTo('other');expect(await s.gateway.handoverCount(a.other,sessionId)).toEqual({status:'denied'});
+ const final={sessionId,expectedSessionRevision:2,expectedCountRevision:1,received:1200};
+ expect(await s.gateway.handover(a.other,{...final,received:1199},op('finish',4))).toEqual({status:'denied'});
+ const done=await s.gateway.handover(a.other,final,op('finish',4));expect(done.status).toBe('ok');
+ expect(await s.gateway.handover(a.other,final,op('finish',4))).toEqual(done);
+ expect(await s.gateway.handover(a.other,{...final,received:1201},op('finish',4))).toEqual({status:'denied'});
+ expect((await s.gateway.saveCount(a.other,{sessionId,expectedSessionRevision:3,expectedCountRevision:2,amount:1200},op('close-count',5))).status).toBe('ok');
+ expect((await s.gateway.close(a.other,{sessionId,expectedSessionRevision:4,expectedCountRevision:3},op('close',6))).status).toBe('ok');
+ const snapshot=await checkpoint(s.db),stage=new BerrieDatabase(`${s.db.name}-handover-stage`);try{await stageSnapshot(stage,snapshot);expect(await checkpoint(stage)).toEqual(snapshot);}finally{await stage.delete();}
+ }finally{s.close();}});
+it('owner mengambil alih dengan hitungan sendiri dan alasan tanpa mengarang actor lama',async()=>{const s=await setup('staff');try{
+ const a=await handoverActors(s,'owner');await s.gateway.open(s.identity,opening,op('open',1));await a.switchTo('other');
+ const base={sessionId,expectedSessionRevision:0,expectedCountRevision:null};
+ expect(await s.gateway.handoverCount(a.other,sessionId,true)).toEqual({status:'ok',value:{sessionId,sessionRevision:0,countRevision:null,active:null}});
+ expect((await s.gateway.saveTakeoverCount(a.other,{...base,amount:0},op('count',2))).status).toBe('ok');
+ expect((await s.gateway.cancelTakeoverCount(a.other,{sessionId,expectedSessionRevision:1,expectedCountRevision:0},op('cancel',3))).status).toBe('ok');
+ expect((await s.gateway.saveTakeoverCount(a.other,{sessionId,expectedSessionRevision:2,expectedCountRevision:1,amount:1200},op('count2',4))).status).toBe('ok');
+ const final={sessionId,expectedSessionRevision:3,expectedCountRevision:2,received:1200,withoutOutgoingReason:'petugas tidak hadir'};
+ expect(await s.gateway.takeover(a.other,{...final,withoutOutgoingReason:' '},op('takeover',5))).toEqual({status:'denied'});
+ expect((await s.gateway.takeover(a.other,final,op('takeover',5))).status).toBe('ok');
+ const snap=await checkpoint(s.db),history=(snap.state.find(r=>r.key===`cash-count:${sessionId}`)!.value as {history:{events:{actorId:string;handover?:{outgoing:string;incoming:string;withoutOutgoingReason:string}}[]}}).history;
+ expect(history.events.at(-1)).toMatchObject({actorId:'other',handover:{outgoing:'actor',incoming:'other',withoutOutgoingReason:'petugas tidak hadir'}});
+ }finally{s.close();}});
+it('AC-86: dua segmen mempertahankan ekspektasi dan tidak membuat kas fiktif',async()=>{const s=await setup('staff');try{
+ const a=await handoverActors(s,'staff');
+ expect((await s.gateway.open(s.identity,{...opening,openingAmount:100000},op('open',1))).status).toBe('ok');
+ expect((await s.gateway.move(s.identity,{...move,amount:50000},op('in-a',2))).status).toBe('ok');
+ expect((await s.gateway.saveHandoverCount(s.identity,{sessionId,expectedSessionRevision:1,expectedCountRevision:null,amount:145000},op('count-a',3))).status).toBe('ok');
+ await a.switchTo('other');const transfer={sessionId,expectedSessionRevision:2,expectedCountRevision:0,received:145000,reason:'selisih'};
+ expect((await s.gateway.handover(a.other,transfer,op('transfer',4))).status).toBe('ok');
+ expect((await s.gateway.move(a.other,{...move,expectedRevision:3,amount:20000},op('in-b',5))).status).toBe('ok');
+ expect((await s.gateway.saveCount(a.other,{sessionId,expectedSessionRevision:4,expectedCountRevision:1,amount:163000},op('count-b',6))).status).toBe('ok');
+ expect((await s.gateway.close(a.other,{sessionId,expectedSessionRevision:5,expectedCountRevision:2,reason:'selisih'},op('close',7))).status).toBe('ok');
+ expect((await s.gateway.handover(a.other,transfer,op('transfer',4))).status).toBe('ok');
+ const {readInternalCashReport}=await import('./cash-report');const report=await readInternalCashReport(s.db,'store',sessionId);
+ expect(report.report.summary).toMatchObject({expected:170000,closingCount:163000,closingDifference:-7000});
+ expect(report.report.segments.map(x=>x.difference)).toEqual([-5000,-2000]);
+ const snapshot=await checkpoint(s.db);expect(snapshot.ledger).toHaveLength(3);
+ }finally{s.close();}});
+it.each(['sequences','state','audit','outbox','receipts'] as const)('rollback handover gateway pada %s',async table=>{const s=await setup('staff');try{
+ const a=await handoverActors(s,'owner');await s.gateway.open(s.identity,opening,op('open',1));await s.gateway.saveHandoverCount(s.identity,{sessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:1200},op('count',2));await a.switchTo('other');
+ const before=await checkpoint(s.db),hook=()=>{throw new Error('write failed')};s.db[table].hook('creating',hook);s.db[table].hook('updating',hook);
+ const final={sessionId,expectedSessionRevision:1,expectedCountRevision:0,received:1200};expect(await s.gateway.handover(a.other,final,op('finish',3))).toEqual({status:'denied'});
+ s.db[table].hook('creating').unsubscribe(hook);s.db[table].hook('updating').unsubscribe(hook);expect(await checkpoint(s.db)).toEqual(before);expect((await s.gateway.handover(a.other,final,op('finish',3))).status).toBe('ok');
+ }finally{s.close();}});
+it('handover menolak field palsu, hitungan basi, identitas salah dan pengambilalihan staf',async()=>{const s=await setup('staff');try{
+ const a=await handoverActors(s,'staff');await s.gateway.open(s.identity,opening,op('open',1));const base={sessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:1200};
+ expect(await s.gateway.saveHandoverCount(s.identity,{...base,incoming:'other'} as typeof base,op('extra',2))).toEqual({status:'denied'});
+ expect(await s.gateway.saveHandoverCount({...s.identity,epoch:2},base,op('wrong',2))).toEqual({status:'denied'});
+ expect((await s.gateway.saveHandoverCount(s.identity,base,op('count',2))).status).toBe('ok');
+ expect(await s.gateway.reviseHandoverCount(s.identity,{...base,expectedSessionRevision:1,expectedCountRevision:null},op('stale',3))).toEqual({status:'denied'});
+ await a.switchTo('other');expect(await s.gateway.saveTakeoverCount(a.other,{sessionId,expectedSessionRevision:1,expectedCountRevision:0,amount:1200},op('takeover',3))).toEqual({status:'denied'});
+ expect(await s.gateway.cancelHandoverCount(a.other,{sessionId,expectedSessionRevision:1,expectedCountRevision:0},op('cancel',3))).toEqual({status:'denied'});
+ }finally{s.close();}});
+it.each(['expiry','clock'] as const)('handover menolak %s pada commit',async fault=>{const s=await setup('staff');try{
+ const a=await handoverActors(s,'owner');await s.gateway.open(s.identity,opening,op('open',1));await s.gateway.saveHandoverCount(s.identity,{sessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:1200},op('count',2));await a.switchTo('other');
+ if(fault==='expiry'){s.advance(7*86400000-1);await s.pin.unlock(a.other,'654321');}
+ const before=await checkpoint(s.db),hook=()=>{if(fault==='expiry')s.advance(1);else s.wall(s.now()+5000);};s.db.receipts.hook('creating',hook);
+ expect(await s.gateway.handover(a.other,{sessionId,expectedSessionRevision:1,expectedCountRevision:0,received:1200},op('finish',3))).toEqual({status:'denied'});
+ s.db.receipts.hook('creating').unsubscribe(hook);expect(await checkpoint(s.db)).toEqual(before);
+ }finally{s.close();}});
+it('input handover disalin sebelum antre; pergantian PIN atau policy membatalkan',async()=>{
+ for(const change of ['input','pin','policy'] as const){const s=await setup('staff');try{
+  await s.gateway.open(s.identity,opening,op('open',1));let release!:()=>void,entered!:()=>void;
+  const gate=new Promise<void>(r=>release=r),ready=new Promise<void>(r=>entered=r),read=s.permit.read.bind(s.permit);
+  s.permit.read=async identity=>{const result=await read(identity);entered();await gate;return result;};
+  const input={sessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:0},pending=s.gateway.saveHandoverCount(s.identity,input,op('count',2));await ready;input.amount=1200;
+  if(change==='pin') await s.pin.lock();
+  if(change==='policy'){const policy={...s.policy,version:2,actors:[{...s.policy.actors[0],active:false}]};const payload={...s.p,sequence:2,policyVersion:2,policyHash:await policyHash(policy)};await s.permit.install(await s.sign(payload),s.identity,policy);}
+  release();const result=await pending;
+  if(change==='input'){expect(result.status).toBe('ok');const read=await s.gateway.handoverCount(s.identity,sessionId);expect(read.status==='ok' && read.value.active?.amount).toBe(0);}
+  else {expect(result).toEqual({status:'denied'});expect((await checkpoint(s.db)).receipts).toHaveLength(1);}
+ }finally{s.close();}}
+});
+it('owner dapat membatalkan hitungan handover yang ditinggalkan dengan alasan dan menghitung ulang',async()=>{const s=await setup('staff');try{
+ const a=await handoverActors(s,'owner');await s.gateway.open(s.identity,opening,op('open',1));
+ await s.gateway.saveHandoverCount(s.identity,{sessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:1000},op('count',2));await a.switchTo('other');
+ expect(await s.gateway.handoverCount(a.other,sessionId,true)).toEqual({status:'ok',value:{sessionId,sessionRevision:1,countRevision:0,active:null,abandoned:true}});
+ const cancel={sessionId,expectedSessionRevision:1,expectedCountRevision:0,reason:'petugas tidak hadir'};
+ expect(await s.gateway.cancelAbandonedHandoverCount(a.other,{...cancel,reason:' '},op('abandon',3))).toEqual({status:'denied'});
+ const done=await s.gateway.cancelAbandonedHandoverCount(a.other,cancel,op('abandon',3));expect(done.status).toBe('ok');expect(await s.gateway.cancelAbandonedHandoverCount(a.other,cancel,op('abandon',3))).toEqual(done);
+ expect((await s.gateway.saveTakeoverCount(a.other,{sessionId,expectedSessionRevision:2,expectedCountRevision:1,amount:1200},op('owner-count',4))).status).toBe('ok');
+ expect((await s.gateway.takeover(a.other,{sessionId,expectedSessionRevision:3,expectedCountRevision:2,received:1200,withoutOutgoingReason:'petugas tidak hadir'},op('takeover',5))).status).toBe('ok');
+ const snapshot=await checkpoint(s.db),stage=new BerrieDatabase(`${s.db.name}-abandoned`);try{await stageSnapshot(stage,snapshot);expect(await checkpoint(stage)).toEqual(snapshot);}finally{await stage.delete();}
+ const h=(snapshot.state.find(r=>r.key===`cash-count:${sessionId}`)!.value as {history:{events:{action:string;actorId:string;reason:string|null}[]}}).history;
+ expect(h.events[1]).toMatchObject({action:'cancel',actorId:'other',reason:'petugas tidak hadir'});
+ }finally{s.close();}});
