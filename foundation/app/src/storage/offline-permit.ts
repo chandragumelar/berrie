@@ -27,6 +27,13 @@ export class OfflinePermitStorage {
   if(!this.locks || typeof this.locks.request!=='function') throw new Error('Penguncian tidak tersedia');
   return this.locks.request(`berrie-permit:${this.db.name}`,fn);
  }
+ /** Internal integration boundary; acquire after the PIN lock and before the writer lock. */
+ withAuthorizationLock<T>(fn:(read:(identity:PinIdentity)=>Promise<{permit:SignedPermit;policy?:PolicySnapshot;now:number;clockFault:boolean;assertTime:()=>number}>)=>Promise<T>):Promise<T> {
+  return this.locked(()=>fn(async identity=>{
+   const value=await this.readLocked({...identity});
+   return {...value,assertTime:()=>{const now=this.time();if(this.fault || value.clockFault || now<value.now) throw new Error('Waktu memerlukan verifikasi online');return now;}};
+  }));
+ }
  private async checked(row:PermitRow, identity:PinIdentity):Promise<SignedPermit> {
   if(row.key!=='permit' || !Number.isSafeInteger(row.lastWall) || row.lastWall<0 || typeof row.clockFault!=='boolean') throw new Error('State permit rusak');
   const permit=await verifyPermit(row.permit,this.keys,identity);
@@ -66,7 +73,9 @@ export class OfflinePermitStorage {
  }
  async read(identity:PinIdentity):Promise<{permit:SignedPermit; policy?:PolicySnapshot; now:number; clockFault:boolean}> {
   identity={...identity};
-  return this.locked(async()=>{
+  return this.locked(()=>this.readLocked(identity));
+ }
+ private async readLocked(identity:PinIdentity):Promise<{permit:SignedPermit; policy?:PolicySnapshot; now:number; clockFault:boolean}> {
    const row=await this.db.permits.get('permit'); if(!row) throw new Error('Permit tidak tersedia');
    const permit=await this.checked(row,identity), now=this.time();
    return this.db.transaction('rw',this.db.permits,async()=>{
@@ -76,6 +85,5 @@ export class OfflinePermitStorage {
     await this.db.permits.put({...row,lastWall:Math.max(now,row.lastWall),clockFault});
     return {permit,...(row.policy?{policy:parsePolicy(row.policy)}:{}),now,clockFault};
    });
-  });
  }
 }

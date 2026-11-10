@@ -20,7 +20,7 @@ export function makeCashChange(session:CashSession, data:OpenCashInput|MoveCashI
  const operationId=meta.operationId,action=opening?'open':'move';
  return {operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:`cash.${action}`,targetId:session.id,payload:previousClose?{data,metadata:meta,previousClose}:{data,metadata:meta},state:[{key:key(session.id),expectedRevision:revision,value:{recordType:'cash-session',schemaVersion:1,session}}],ledger:[{id:`cash-ledger:${operationId}`,operationId,value:entry}],audit:[{id:`cash-audit:${operationId}`,operationId,value:{action,actorId:meta.actorId,policyVersion:meta.policyVersion,occurredAt:meta.recordedAt,sessionId:session.id,before,after:balance}}],outbox:{id:`cash-outbox:${operationId}`,operationId,value:{sessionId:session.id}},result:{sessionId:session.id,revision:(revision ?? -1)+1,balance}};
 }
-async function save(db:BerrieDatabase, input:OpenCashInput|MoveCashInput, metadata:CashMetadata, opening:boolean, locks:LockProvider=navigator.locks):Promise<unknown> {
+async function save(db:BerrieDatabase, input:OpenCashInput|MoveCashInput, metadata:CashMetadata, opening:boolean, locks:LockProvider=navigator.locks, beforeCommit?:()=>void, requiredCustodian?:string):Promise<unknown> {
  const data=copyInput(input) as OpenCashInput|MoveCashInput,meta=copyInput(metadata) as CashMetadata; canonical({data,metadata:meta});
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
@@ -41,12 +41,18 @@ async function save(db:BerrieDatabase, input:OpenCashInput|MoveCashInput, metada
    const d=data as MoveCashInput,record=row?.value as {recordType?:string;session?:CashSession};
    if(!row || record?.recordType!=='cash-session' || row.revision!==d.expectedRevision || !record.session || record.session.storeId!==meta.storeId || record.session.id!==d.sessionId) throw new Error('Sesi atau revisi tidak sesuai');
    session=record.session;before=cashBalance(cashMovements(changes,session.id),session);
+   if(requiredCustodian) {
+    const history=snapshot.state.find(r=>r.key===`cash-count:${session.id}`)?.value as {history?:{events:{action:string;handover?:{incoming:string}}[]}}|undefined;
+    const handovers=history?.history?.events.filter(e=>e.action==='handover') ?? [];
+    const custodian=handovers.at(-1)?.handover?.incoming ?? session.initialCustodian;
+    if(custodian!==requiredCustodian) throw new Error('Penanggung jawab tidak sesuai');
+   }
   }
   return commit(makeCashChange(session,data,meta,row?.revision ?? null,before,previousClose));
- });
+ },beforeCommit);
 }
-export function openCashSession(db:BerrieDatabase,data:OpenCashInput,meta:CashMetadata,locks?:LockProvider):Promise<unknown> {return save(db,data,meta,true,locks);}
-export function moveCash(db:BerrieDatabase,data:MoveCashInput,meta:CashMetadata,locks?:LockProvider):Promise<unknown> {return save(db,data,meta,false,locks);}
+export function openCashSession(db:BerrieDatabase,data:OpenCashInput,meta:CashMetadata,locks?:LockProvider,beforeCommit?:()=>void):Promise<unknown> {return save(db,data,meta,true,locks,beforeCommit);}
+export function moveCash(db:BerrieDatabase,data:MoveCashInput,meta:CashMetadata,locks?:LockProvider,beforeCommit?:()=>void,requiredCustodian?:string):Promise<unknown> {return save(db,data,meta,false,locks,beforeCommit,requiredCustodian);}
 /** Internal only: T-04 must authorize access as well as commands. */
 export async function readCashBalance(db:BerrieDatabase,storeId:string,sessionId:string):Promise<number> {
  const snapshot=await checkpoint(db);validateCheckpoint(snapshot);const row=snapshot.state.find(r=>r.key===key(sessionId));const value=row?.value as {recordType?:string;session?:CashSession};
