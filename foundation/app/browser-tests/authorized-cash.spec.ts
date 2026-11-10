@@ -86,3 +86,46 @@ for(const fault of ['expiry','clock'] as const) test(`hitung menggulung ${fault}
  expect(await a.evaluate(async()=>{const {checkpoint}=await import('/src/storage/recovery.ts');const snap=await checkpoint((window as unknown as {db:import('/src/storage/database.ts').BerrieDatabase}).db);return {receipts:snap.receipts.length,audit:snap.audit.length,outbox:snap.outbox.length,ledger:snap.ledger.length,sequence:snap.sequences[0].sequence,state:snap.state.length};})).toEqual({receipts:1,audit:1,outbox:1,ledger:1,sequence:1,state:1});
  await context.close();
 });
+
+test('hitungan handover dan pergerakan bersaing di dua tab serta retry setelah reload',async({browser})=>{
+ const context=await browser.newContext(),a=await context.newPage(),b=await context.newPage();await Promise.all([a.goto('/'),b.goto('/')]);
+ const setup=await a.evaluate(async()=>{
+  const {permitBytes}=await import('/src/domain/offline-permit.ts'),{defaults,policyHash}=await import('/src/domain/permission-policy.ts'),{createPinVerifier,MIN_ITERATIONS}=await import('/src/domain/local-pin.ts');
+  const {BerrieDatabase}=await import('/src/storage/database.ts'),{LocalPinSecurity}=await import('/src/storage/local-pin.ts'),{OfflinePermitStorage}=await import('/src/storage/offline-permit.ts'),{AuthorizedCash}=await import('/src/storage/authorized-cash.ts');
+  const name=`handover-count-${crypto.randomUUID()}`,identity={storeId:'s',deviceId:'d',epoch:1,actorId:'a'},pair=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']),now=Date.now();
+  const policy={version:1,storeId:'s',actors:[{id:'a',role:'staff' as const,active:true}],matrix:{...defaults,'cash-adjustment':'allow' as const},discountLimit:{rupiah:null,basisPoints:null}};
+  const payload={version:2 as const,algorithm:'ES256' as const,keyId:'key',...identity,role:'staff' as const,scope:'cashier' as const,sequence:1,verifiedAt:now,entitlementEnd:now+86400000,policyVersion:1,policyHash:await policyHash(policy)};
+  const bytes=new Uint8Array(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,permitBytes(payload))),signature=btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const db=new BerrieDatabase(name),pin=new LocalPinSecurity(name),permit=new OfflinePermitStorage(name,{key:pair.publicKey});await pin.installVerifier(identity,await createPinVerifier('123456',MIN_ITERATIONS));await pin.unlock(identity,'123456');await permit.install({payload,signature},identity,policy);
+  const gateway=new AuthorizedCash(db,pin,permit);Object.assign(window,{gateway});const sessionId='11111111-1111-4111-8111-111111111111';await gateway.open(identity,{sessionId,number:'1',initialCustodian:'a',openingAmount:0,timeZone:'Asia/Jakarta'},{operationId:'open',localSequence:1,recordedAt:'2026-11-01T00:00:00Z'});
+  return {name,identity,jwk:await crypto.subtle.exportKey('jwk',pair.publicKey)};
+ });
+ await b.evaluate(async({name,jwk,identity})=>{const {BerrieDatabase}=await import('/src/storage/database.ts'),{LocalPinSecurity}=await import('/src/storage/local-pin.ts'),{OfflinePermitStorage}=await import('/src/storage/offline-permit.ts'),{AuthorizedCash}=await import('/src/storage/authorized-cash.ts');const key=await crypto.subtle.importKey('jwk',jwk,{name:'ECDSA',namedCurve:'P-256'},false,['verify']),db=new BerrieDatabase(name),pin=new LocalPinSecurity(name),permit=new OfflinePermitStorage(name,{key});await pin.unlock(identity,'123456');Object.assign(window,{gateway:new AuthorizedCash(db,pin,permit)});},setup);
+ const id='11111111-1111-4111-8111-111111111111',operation={operationId:'count',localSequence:2,recordedAt:'2026-11-01T00:00:00Z'},input={sessionId:id,expectedSessionRevision:0,expectedCountRevision:null,amount:0};
+ const [count,move]=await Promise.all([a.evaluate(({identity,input,operation})=>(window as unknown as {gateway:import('/src/storage/authorized-cash.ts').AuthorizedCash}).gateway.saveHandoverCount(identity,input,operation),{identity:setup.identity,input,operation}),b.evaluate(({identity,id})=>(window as unknown as {gateway:import('/src/storage/authorized-cash.ts').AuthorizedCash}).gateway.move(identity,{sessionId:id,expectedRevision:0,kind:'in',amount:1,category:'x',description:'x'},{operationId:'move',localSequence:2,recordedAt:'2026-11-01T00:00:00Z'}),{identity:setup.identity,id})]);
+ expect([count,move].filter(r=>r.status==='ok')).toHaveLength(1);expect([count,move].filter(r=>r.status==='denied')).toHaveLength(1);
+ if(count.status==='ok') {await a.reload();const replay=await a.evaluate(async({name,jwk,identity,input,operation})=>{const {BerrieDatabase}=await import('/src/storage/database.ts'),{LocalPinSecurity}=await import('/src/storage/local-pin.ts'),{OfflinePermitStorage}=await import('/src/storage/offline-permit.ts'),{AuthorizedCash}=await import('/src/storage/authorized-cash.ts');const key=await crypto.subtle.importKey('jwk',jwk,{name:'ECDSA',namedCurve:'P-256'},false,['verify']),db=new BerrieDatabase(name),pin=new LocalPinSecurity(name),permit=new OfflinePermitStorage(name,{key});await pin.unlock(identity,'123456');return new AuthorizedCash(db,pin,permit).saveHandoverCount(identity,input,operation);},{...setup,input,operation});expect(replay).toEqual(count);}
+ await context.close();
+});
+
+
+test('serah-terima memakai PIN bergantian dan replay setelah reload',async({page})=>{
+ await page.goto('/');
+ const setup=await page.evaluate(async()=>{
+  const {permitBytes}=await import('/src/domain/offline-permit.ts'),{defaults,policyHash}=await import('/src/domain/permission-policy.ts'),{createPinVerifier,MIN_ITERATIONS}=await import('/src/domain/local-pin.ts');
+  const {BerrieDatabase}=await import('/src/storage/database.ts'),{LocalPinSecurity}=await import('/src/storage/local-pin.ts'),{OfflinePermitStorage}=await import('/src/storage/offline-permit.ts'),{AuthorizedCash}=await import('/src/storage/authorized-cash.ts');
+  const name=`handover-reload-${crypto.randomUUID()}`,a={storeId:'s',deviceId:'d',epoch:1,actorId:'a'},b={...a,actorId:'b'},pair=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']),now=Date.now();
+  const policy={version:1,storeId:'s',actors:[{id:'a',role:'staff' as const,active:true},{id:'b',role:'owner' as const,active:true}],matrix:{...defaults},discountLimit:{rupiah:null,basisPoints:null}},hash=await policyHash(policy);
+  const db=new BerrieDatabase(name),pin=new LocalPinSecurity(name),permit=new OfflinePermitStorage(name,{key:pair.publicKey}),gateway=new AuthorizedCash(db,pin,permit);
+  await pin.installVerifier(a,await createPinVerifier('123456',MIN_ITERATIONS));await pin.installVerifier(b,await createPinVerifier('654321',MIN_ITERATIONS));
+  async function install(identity:typeof a,role:'staff'|'owner',sequence:number){const payload={version:2 as const,algorithm:'ES256' as const,keyId:'key',...identity,role,scope:'cashier' as const,sequence,verifiedAt:now,entitlementEnd:now+86400000,policyVersion:1,policyHash:hash};const bytes=new Uint8Array(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pair.privateKey,permitBytes(payload))),signature=btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');await permit.install({payload,signature},identity,policy);}
+  const sessionId='11111111-1111-4111-8111-111111111111',op=(operationId:string,localSequence:number)=>({operationId,localSequence,recordedAt:'2026-11-01T00:00:00Z'});
+  await install(a,'staff',1);await pin.unlock(a,'123456');await gateway.open(a,{sessionId,number:'1',initialCustodian:'a',openingAmount:0,timeZone:'Asia/Jakarta'},op('open',1));
+  const count=await gateway.saveHandoverCount(a,{sessionId,expectedSessionRevision:0,expectedCountRevision:null,amount:0},op('count',2));
+  await install(b,'owner',2);await pin.unlock(b,'654321');const input={sessionId,expectedSessionRevision:1,expectedCountRevision:0,received:0},operation=op('handover',3),done=await gateway.handover(b,input,operation);
+  return {name,b,input,operation,count,done,jwk:await crypto.subtle.exportKey('jwk',pair.publicKey)};
+ });
+ expect(setup.count.status).toBe('ok');expect(setup.done.status).toBe('ok');await page.reload();
+ const result=await page.evaluate(async({name,b,input,operation,jwk})=>{const {BerrieDatabase}=await import('/src/storage/database.ts'),{LocalPinSecurity}=await import('/src/storage/local-pin.ts'),{OfflinePermitStorage}=await import('/src/storage/offline-permit.ts'),{AuthorizedCash}=await import('/src/storage/authorized-cash.ts'),{checkpoint,stageSnapshot}=await import('/src/storage/recovery.ts');const key=await crypto.subtle.importKey('jwk',jwk,{name:'ECDSA',namedCurve:'P-256'},false,['verify']),db=new BerrieDatabase(name),pin=new LocalPinSecurity(name),permit=new OfflinePermitStorage(name,{key});await pin.unlock(b,'654321');const replay=await new AuthorizedCash(db,pin,permit).handover(b,input,operation),snapshot=await checkpoint(db),stage=new BerrieDatabase(`${name}-stage`);await stageSnapshot(stage,snapshot);const staged=await checkpoint(stage);await stage.delete();return {replay,snapshot,staged};},setup);
+ expect(result.replay).toEqual(setup.done);expect(result.staged).toEqual(result.snapshot);
+});
