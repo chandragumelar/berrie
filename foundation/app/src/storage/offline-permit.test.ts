@@ -99,3 +99,65 @@ describe('offline permit storage and decision',()=>{
   broken.close();s.permit.close();s.pin.close();s.db.close();
  });
 });
+
+describe('policy permit v2',()=>{
+ it('binds a canonical policy, blocks downgrade, mismatch, replay and preserves the old pair',async()=>{
+  const {defaults,policyHash}=await import('../domain/permission-policy');
+  const s=await setup('staff');
+  const policy={version:1,storeId:'store',actors:[{id:'actor',role:'staff' as const,active:true}],matrix:{...defaults},discountLimit:{rupiah:null,basisPoints:null}};
+  const payload:PermitPayload={...s.payload,version:2,sequence:2,policyVersion:1,policyHash:await policyHash(policy)};
+  const signed=await s.sign(payload);
+  await expect(s.permit.install(signed,s.identity,{...policy,storeId:'other'})).rejects.toThrow();
+  await s.permit.install(signed,s.identity,policy);
+  await expect(s.permit.install(signed,s.identity,policy)).rejects.toThrow();
+  await expect(s.permit.install(await s.sign({...s.payload,sequence:3}),s.identity)).rejects.toThrow();
+  await expect(s.permit.install(await s.sign({...payload,sequence:3,policyHash:'0'.repeat(64)}),s.identity,policy)).rejects.toThrow();
+  expect((await s.permit.read(s.identity)).policy).toEqual(policy);
+  s.permit.close();s.pin.close();s.db.close();
+ });
+ it('evaluates every configurable mode for staff and owner and keeps free settlement separate',async()=>{
+  const {defaults,policyHash,configurableActivities}=await import('../domain/permission-policy');
+  const {evaluateActivity}=await import('./activity-permission');
+  for(const role of ['owner','staff'] as const) {
+   const s=await setup(role);let seq=1;
+   for(const mode of ['allow','approval','owner-only'] as const) {
+    const matrix={...defaults};for(const activity of configurableActivities) matrix[activity]=mode;
+    const policy={version:++seq,storeId:'store',actors:[{id:'actor',role,active:true}],matrix,discountLimit:{rupiah:100,basisPoints:1000}};
+    await s.permit.install(await s.sign({...s.payload,version:2,sequence:seq,policyVersion:seq,policyHash:await policyHash(policy)}),s.identity,policy);
+    for(const activity of configurableActivities) {
+     const result=await evaluateActivity(s.permit,s.pin,s.identity,s.db,{activity,deviceScope:'cashier',discount:{subtotal:1000,amount:100,revision:1}});
+     expect(result.result,`${role}/${mode}/${activity}`).toBe(role==='owner'?'allow':mode==='allow'?'allow':mode==='approval'?'approval-required':'deny');
+    }
+   }
+   expect((await evaluateActivity(s.permit,s.pin,s.identity,s.db,{activity:'unknown',deviceScope:'cashier'})).result).toBe('deny');
+   expect((await evaluateActivity(s.permit,s.pin,s.identity,s.db,{activity:'sale',deviceScope:'phone'})).result).toBe('deny');
+   s.permit.close();s.pin.close();s.db.close();
+  }
+ });
+});
+
+it('re-evaluates discount inputs, denies inactive staff and does not turn approval into execution',async()=>{
+ const {defaults,policyHash}=await import('../domain/permission-policy');const {evaluateActivity}=await import('./activity-permission');const s=await setup('staff');
+ const policy={version:1,storeId:'store',actors:[{id:'actor',role:'staff' as const,active:true}],matrix:{...defaults,discount:'allow' as const},discountLimit:{rupiah:100,basisPoints:1000}};
+ const payload:PermitPayload={...s.payload,version:2,sequence:2,policyVersion:1,policyHash:await policyHash(policy)};
+ await s.permit.install(await s.sign(payload),s.identity,policy);const before=await checkpoint(s.db);
+ const evalDiscount=(subtotal:number,amount:number,revision:number)=>evaluateActivity(s.permit,s.pin,s.identity,s.db,{activity:'discount',deviceScope:'cashier',discount:{subtotal,amount,revision}});
+ expect((await evalDiscount(1000,100,1)).result).toBe('allow');expect((await evalDiscount(1000,101,2)).result).toBe('approval-required');expect((await evalDiscount(900,100,3)).result).toBe('approval-required');expect((await evalDiscount(1000,100,0)).result).toBe('deny');
+ expect((await evaluateActivity(s.permit,s.pin,s.identity,s.db,{activity:'free-settlement',deviceScope:'cashier'})).result).toBe('approval-required');
+ expect((await evaluateActivity(s.permit,s.pin,s.identity,s.db,{activity:'settings',deviceScope:'cashier'})).result).toBe('deny');expect(await checkpoint(s.db)).toEqual(before);
+ const inactive={...policy,version:2,actors:[{...policy.actors[0],active:false}]};
+ await s.permit.install(await s.sign({...payload,sequence:3,policyVersion:2,policyHash:await policyHash(inactive)}),s.identity,inactive);
+ expect((await evalDiscount(1000,100,4)).result).toBe('deny');s.permit.close();s.pin.close();s.db.close();
+});
+
+it('retains the v2 pair after failed writes and rejects corrupted storage',async()=>{
+ const {defaults,policyHash}=await import('../domain/permission-policy');const s=await setup();
+ const policy={version:1,storeId:'store',actors:[{id:'actor',role:'owner' as const,active:true}],matrix:{...defaults},discountLimit:{rupiah:null,basisPoints:null}};
+ const p:PermitPayload={...s.payload,version:2,sequence:2,policyVersion:1,policyHash:await policyHash(policy)};await s.permit.install(await s.sign(p),s.identity,policy);
+ const original=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(){throw new Error('write failure')};
+ try {await expect(s.permit.install(await s.sign({...p,sequence:3}),s.identity,policy)).rejects.toThrow();} finally {IDBObjectStore.prototype.put=original;}
+ expect((await s.permit.read(s.identity)).permit.payload.sequence).toBe(2);
+ const Dexie=(await import('dexie')).default;const raw=new Dexie(`${s.name}-offline-permit-security`);raw.version(1).stores({permits:'&key'});const row=await raw.table('permits').get('permit');row.policy.actors[0].active=false;await raw.table('permits').put(row);
+ await expect(s.permit.read(s.identity)).rejects.toThrow();await expect(s.permit.install(await s.sign({...p,sequence:3}),s.identity,policy)).rejects.toThrow();
+ raw.close();s.permit.close();s.pin.close();s.db.close();
+});

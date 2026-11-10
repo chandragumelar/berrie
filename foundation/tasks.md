@@ -724,3 +724,11 @@ Kontrak permit bertanda tangan, anchor waktu IndexedDB terpisah dan evaluator ke
 Pemeriksaan clone: `npm ci --legacy-peer-deps`, typecheck, lint, 532 tes unit/storage, 98 tes browser Chrome dan build lulus berurutan. Audit dependensi npm melaporkan tujuh kerentanan sedang; penilaian dan pembaruan dependensi di luar perubahan ini.
 
 Pemeriksaan clone: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (523 tes), `npm run test:browser` (97 tes Chrome) dan `npm run build` lulus berurutan. Tes browser PIN terarah dijalankan ulang setelah penguatan pemeriksaan staging. Browser menggunakan server localhost dan Chrome di luar sandbox; tes otomatis tidak menggantikan review keamanan atau pengujian perangkat fisik.
+
+### Snapshot kebijakan offline dan evaluator aktivitas — parsial T-04
+
+Permit v2 mengikat versi dan hash snapshot matriks bersama, identitas/status actor dan batas diskon; pasangan disimpan terpisah di bawah Web Lock dan diverifikasi ulang. Permit v1 tetap terbaca tetapi tidak membuktikan kebijakan. Evaluator internal memeriksa sesi PIN, mode permit dan kebijakan, dengan keputusan approval terpisah dari eksekusi; batas diskon memakai integer dan gratis Rp0 aktivitas terpisah. Kontrak, batas dan kewajiban pemeriksaan ulang saat integrasi command ada pada [README aplikasi](app/README.md#snapshot-kebijakan-dan-evaluator-aktivitas-parsial-t-04).
+
+Bukti parsial AC-77/78/79: matriks tiga mode, actor, batas diskon dan penyimpanan pasangan; regresi AC-40/41: expiry, clock fault dan mode terbatas. Tes lokal tidak membuktikan keamanan perangkat, approval nyata atau pencabutan segera saat offline. Tidak ada UI, command bisnis, penerbit produksi, server atau sync baru. T-04, AC penuh dan pilot tetap belum selesai.
+
+Pemeriksaan `foundation/app`: `npm ci --legacy-peer-deps`, typecheck, lint, 538 tes unit/storage, 99 tes browser Chrome, build dan `git diff --check` lulus. Setelah penyalinan input snapshot dipindah sebelum pemeriksaan async, dua tes browser permit dijalankan ulang dan lulus. Audit npm melaporkan 7 kerentanan moderate pada dependensi; tidak ada perubahan dependensi dalam pekerjaan ini.

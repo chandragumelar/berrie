@@ -1,21 +1,22 @@
 /** Version 1 signs a fixed-order JSON array, encoded as UTF-8. Times are epoch milliseconds. */
 export interface PermitPayload {
- version:1; algorithm:'ES256'; keyId:string; storeId:string; deviceId:string; epoch:number;
- actorId:string; role:'owner'|'staff'; scope:'cashier'; sequence:number; verifiedAt:number; entitlementEnd:number;
+ version:1|2; algorithm:'ES256'; keyId:string; storeId:string; deviceId:string; epoch:number;
+ policyVersion?:number; policyHash?:string; actorId:string; role:'owner'|'staff'; scope:'cashier'; sequence:number; verifiedAt:number; entitlementEnd:number;
 }
 export interface SignedPermit { payload:PermitPayload; signature:string }
 export type PermitKeys = Readonly<Record<string, CryptoKey>>;
 const fields=['version','algorithm','keyId','storeId','deviceId','epoch','actorId','role','scope','sequence','verifiedAt','entitlementEnd'] as const;
+const fieldsV2=[...fields,'policyVersion','policyHash'] as const;
 const id=(v:unknown):v is string=>typeof v==='string' && /^[A-Za-z0-9._:-]{1,200}$/.test(v);
 const integer=(v:unknown):v is number=>typeof v==='number' && Number.isSafeInteger(v) && v>=0;
 function object(v:unknown):v is Record<string,unknown> { return v!==null && typeof v==='object' && !Array.isArray(v) && Object.getPrototypeOf(v)===Object.prototype; }
 export function parsePermit(input:unknown):SignedPermit {
  if(!object(input) || Object.keys(input).sort().join(',')!=='payload,signature' || !object(input.payload)) throw new Error('Permit tidak sah');
  const p=input.payload;
- if(Object.keys(p).sort().join(',')!==[...fields].sort().join(',') || p.version!==1 || p.algorithm!=='ES256' || !id(p.keyId) || !id(p.storeId) || !id(p.deviceId) || !id(p.actorId) || !integer(p.epoch) || p.epoch<1 || !integer(p.sequence) || p.sequence<1 || !integer(p.verifiedAt) || !integer(p.entitlementEnd) || p.verifiedAt>Number.MAX_SAFE_INTEGER-604800000 || p.entitlementEnd>Number.MAX_SAFE_INTEGER-604800000 || (p.role!=='owner' && p.role!=='staff') || p.scope!=='cashier' || typeof input.signature!=='string' || !/^[A-Za-z0-9_-]{86}$/.test(input.signature)) throw new Error('Permit tidak sah');
- return {payload:{version:1,algorithm:'ES256',keyId:p.keyId,storeId:p.storeId,deviceId:p.deviceId,epoch:p.epoch,actorId:p.actorId,role:p.role,scope:'cashier',sequence:p.sequence,verifiedAt:p.verifiedAt,entitlementEnd:p.entitlementEnd},signature:input.signature};
+ if((p.version!==1 && p.version!==2) || Object.keys(p).sort().join(',')!==[...(p.version===1?fields:fieldsV2)].sort().join(',') || (p.version===2 && (!integer(p.policyVersion) || p.policyVersion<1 || typeof p.policyHash!=='string' || !/^[0-9a-f]{64}$/.test(p.policyHash))) || p.algorithm!=='ES256' || !id(p.keyId) || !id(p.storeId) || !id(p.deviceId) || !id(p.actorId) || !integer(p.epoch) || p.epoch<1 || !integer(p.sequence) || p.sequence<1 || !integer(p.verifiedAt) || !integer(p.entitlementEnd) || p.verifiedAt>Number.MAX_SAFE_INTEGER-604800000 || p.entitlementEnd>Number.MAX_SAFE_INTEGER-604800000 || (p.role!=='owner' && p.role!=='staff') || p.scope!=='cashier' || typeof input.signature!=='string' || !/^[A-Za-z0-9_-]{86}$/.test(input.signature)) throw new Error('Permit tidak sah');
+ return {payload:{version:p.version as 1|2,...(p.version===2?{policyVersion:p.policyVersion as number,policyHash:p.policyHash as string}:{}),algorithm:'ES256',keyId:p.keyId,storeId:p.storeId,deviceId:p.deviceId,epoch:p.epoch,actorId:p.actorId,role:p.role,scope:'cashier',sequence:p.sequence,verifiedAt:p.verifiedAt,entitlementEnd:p.entitlementEnd},signature:input.signature};
 }
-export function permitBytes(p:PermitPayload):Uint8Array<ArrayBuffer> { return new TextEncoder().encode(JSON.stringify(fields.map(k=>p[k]))); }
+export function permitBytes(p:PermitPayload):Uint8Array<ArrayBuffer> { return new TextEncoder().encode(JSON.stringify((p.version===1?fields:fieldsV2).map(k=>p[k]))); }
 function signatureBytes(s:string):Uint8Array<ArrayBuffer> {
  const b=atob(s.replace(/-/g,'+').replace(/_/g,'/')+'==');
  const bytes=Uint8Array.from(b,c=>c.charCodeAt(0));
