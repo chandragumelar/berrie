@@ -10,7 +10,8 @@ import { requireOrderSession } from './order-session';
 import type { BusinessRecord } from '../domain/business-record';
 import { payConfirmedFirstBatchCash, type ConfirmedCashPaymentInput } from './confirmed-cash-payment';
 import { payConfirmedFirstBatchNoncash, type ConfirmedNoncashInput } from './noncash-payment';
-import { readPaymentMethods } from './payment-methods';
+import { readPaymentMethods, setPaymentMethods, type PaymentMethodsInput } from './payment-methods';
+import type { PaymentMethods } from '../domain/payment-methods';
 
 export interface PaymentOperation {operationId:string;localSequence:number;recordedAt:string}
 const direct:LockProvider={request:async(_name,fn)=>fn()};
@@ -48,6 +49,20 @@ export class AuthorizedPayments {
  readMethods(identityInput:PinIdentity) {
   try {const i=identity(identityInput);return this.execute(i,async ctx=>{validateCheckpoint(await checkpoint(this.db));return readPaymentMethods(this.db,ctx.storeId);});}
   catch {return Promise.resolve({status:'denied'} as const);}
+ }
+ setMethods(identityInput:PinIdentity,input:PaymentMethodsInput,operation:PaymentOperation) {
+  try {
+   const i=identity(identityInput),d=copyInput(input) as PaymentMethodsInput,o=copyInput(operation) as PaymentOperation;canonical({i,d,o});
+   if(!exact(d,['expectedRevision','qris','transfer','ewallet']) || (d.expectedRevision!==null && (!integer(d.expectedRevision) || d.expectedRevision===Number.MAX_SAFE_INTEGER)) || typeof d.qris!=='boolean' || typeof d.transfer!=='boolean' || typeof d.ewallet!=='boolean' || !exact(o,['operationId','localSequence','recordedAt']) || !id(o.operationId) || !integer(o.localSequence,1) || typeof o.recordedAt!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(o.recordedAt) || !Number.isFinite(Date.parse(o.recordedAt))) throw new Error('Input tidak sah');
+   return this.execute(i,async ctx=>{
+    if(ctx.role!=='owner') throw new Error('Hanya owner');
+    ctx.guard(false);
+    validateCheckpoint(await checkpoint(this.db));
+    const meta={...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion};
+    const result=await setPaymentMethods(this.db,d,meta,direct,()=>ctx.guard(false)) as {methods:PaymentMethods;revision:number};
+    return {methods:result.methods,revision:result.revision};
+   });
+  } catch {return Promise.resolve({status:'denied'} as const);}
  }
  payCash(identityInput:PinIdentity,input:ConfirmedCashPaymentInput,operation:PaymentOperation) {return this.pay(identityInput,input,operation,'cash');}
  payNoncash(identityInput:PinIdentity,input:ConfirmedNoncashInput,operation:PaymentOperation) {return this.pay(identityInput,input,operation,'noncash');}
