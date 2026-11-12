@@ -358,3 +358,9 @@ Tunai menyimpan nilai bersih penjualan pada ledger, bukan uang yang diterima; no
 Bukti hanya parsial AC-20/22–24/30/39–41/48/77, bukan kelulusan AC, T-04/T-10 atau pilot. Pembayaran draft, Rp0, koreksi metode, refund, konfigurasi metode berizin, UI, approval execution, penerbit permit/auth produksi, server/sync, printer dan backup produksi belum termasuk. Tes lokal tidak membuktikan keamanan perangkat, pencabutan offline segera, jam saat seluruh instance tertutup, perangkat fisik atau restore drill.
 
 Pemeriksaan clone berurutan: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (725 tes), `npm run test:browser` (112 tes Chrome), dan `npm run build` lulus. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.
+
+### Baca dan batal draft berizin (parsial P-02)
+
+`AuthorizedDrafts.readDraft` membaca draft yang dapat dilanjutkan; `readCancelledDraft` membaca snapshot dan event pembatalan; `cancelStoredDraft` membatalkan seluruh draft dengan alasan. PIN, permit v2/policy, identitas toko dan histori diperiksa di bawah lock PIN → permit → writer; pembatalan dan replay memakai guard di dalam transaksi. Owner boleh membaca setelah expiry dan hanya membatalkan unit yang semuanya terbukti tersimpan sebelum expiry; staf memerlukan permit aktif. Sesi hitung atau tertutup menahan pembatalan dan replay. Hasil tidak mengungkap receipt atau saldo. Primitive mentah tetap internal.
+
+Create/update/rencana/konfirmasi gateway, UI, katalog tepercaya, auth produksi, approval, server/sync dan printer belum termasuk. Tes lokal tidak membuktikan keamanan produksi atau perangkat fisik. Hasil pemeriksaan pada [pelacak](../tasks.md).

@@ -17,7 +17,7 @@ export function makeDraftCancellationChange(draft:OrderDraft,data:CancelDraftInp
  return {operationId,storeId:metadata.storeId,deviceId:metadata.deviceId,deviceEpoch:metadata.deviceEpoch,localSequence:metadata.localSequence,actorId:metadata.actorId,policyVersion:metadata.policyVersion,kind:'draft.cancel',targetId:data.orderId,payload:{data,metadata,contractVersion:2,sessionSource},state:[{key:`draft-cancellation:${data.orderId}`,expectedRevision:null,value:{recordType:'draft-cancellation',schemaVersion:1,cancellation:event}}],ledger:[],audit:[{id:`draft-cancel-audit:${operationId}`,operationId,value:{action:'cancel',event,draft}}],outbox:{id:`draft-cancel-outbox:${operationId}`,operationId,value:{orderId:data.orderId}},result:{orderId:data.orderId,cancellation:event}};
 }
 /** Internal only: caller must enforce T-04 authorization. */
-export function cancelStoredDraft(db:BerrieDatabase,input:CancelDraftInput,metadata:DraftMetadata,locks:LockProvider=navigator.locks):Promise<unknown> {
+export function cancelStoredDraft(db:BerrieDatabase,input:CancelDraftInput,metadata:DraftMetadata,locks:LockProvider=navigator.locks,beforeCommit?:()=>void):Promise<unknown> {
  const data=copyInput(input) as CancelDraftInput,meta=copyInput(metadata) as DraftMetadata;canonical({data,metadata:meta});
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
@@ -30,7 +30,7 @@ export function cancelStoredDraft(db:BerrieDatabase,input:CancelDraftInput,metad
   const draft=(row.value as Extract<BusinessRecord,{recordType:'draft'}>).draft;
   const session=await requireOrderSession(db,meta.storeId,draft.cashSessionId);
   return commit(makeDraftCancellationChange(draft,data,meta,session));
- });
+ },beforeCommit);
 }
 export async function readDraftCancellation(db:BerrieDatabase,orderId:string):Promise<DraftCancellation|undefined> {
  if(typeof orderId!=='string' || !orderId.trim()) throw new Error('ID tidak sah');
