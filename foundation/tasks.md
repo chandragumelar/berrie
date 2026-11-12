@@ -792,3 +792,11 @@ Pemeriksaan clone berurutan: `npm ci --legacy-peer-deps`, `npm run typecheck`, `
 Irisan parsial: `AuthorizedServing` mengikat baca penyajian/status dan penyajian unit ke PIN, permit/policy v2, actor aktif dan identitas database; lock PIN → permit → writer dan penjaga commit/replay berlaku. Owner mode terbatas hanya menyajikan seluruh pilihan yang terbukti lama pada checkpoint/receipt tervalidasi; staf ditolak setelah expiry dan clock fault menolak semua. Penyajian parsial tidak mengubah stok atau uang. Tes storage dan browser mencakup replay/konflik, rollback, perubahan izin saat antre, expiry, pilihan campuran, staging dan persaingan dua tab. Pemetaan parsial AC-17/40/41/77 dan regresi AC-20/30/39/48; AC penuh, T-04, UT peserta dan pilot belum selesai. Batas implementasi dan pemeriksaan dicatat di [README app](app/README.md).
 
 Pemeriksaan clone berurutan: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (694 tes), `npm run test:browser` (108 Chrome), dan `npm run build` lulus. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.
+
+### Gateway pembayaran batch confirmed berizin
+
+Irisan parsial T-04/T-10: gateway tunai dan non-tunai positif untuk batch confirmed serta pembacaan metode aktif; PIN, permit/policy v2 dan actor aktif diverifikasi pada batas penulis, dengan penjaga transaksi dan replay. Owner mode terbatas memerlukan bukti seluruh unit tersimpan sebelum expiry; staf memerlukan permit aktif. Verifikasi manual non-tunai bukan konfirmasi penyedia. Rincian dan batas pada [README aplikasi](app/README.md).
+
+Pemetaan bukti parsial AC-20/22–24/30/39–41/48/77; bukan kelulusan AC, penyelesaian T-04/T-10 atau kesiapan pilot. UI, draft, Rp0, koreksi/refund, konfigurasi berizin, approval execution, auth/penerbit produksi, server/sync, printer dan deployment di luar irisan. Tes otomatis tidak membuktikan keamanan produksi, perangkat fisik atau restore drill.
+
+Pemeriksaan clone berurutan: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (725 tes), `npm run test:browser` (112 tes Chrome), dan `npm run build` lulus. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.

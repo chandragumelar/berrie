@@ -29,7 +29,7 @@ export function makeConfirmedCashPaymentChange(batch:FirstBatch,session:CashSess
 }
 
 /** Internal only. T-04 must authorize the actor, device, session and operation. */
-export function payConfirmedFirstBatchCash(db:BerrieDatabase,input:ConfirmedCashPaymentInput,metadata:StockMetadata,locks:LockProvider=navigator.locks):Promise<unknown> {
+export function payConfirmedFirstBatchCash(db:BerrieDatabase,input:ConfirmedCashPaymentInput,metadata:StockMetadata,locks:LockProvider=navigator.locks,beforeCommit?:()=>void):Promise<unknown> {
  const data=copyInput(input) as ConfirmedCashPaymentInput,meta=copyInput(metadata) as StockMetadata,intent={data,metadata:meta};canonical(intent);
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
@@ -44,5 +44,5 @@ export function payConfirmedFirstBatchCash(db:BerrieDatabase,input:ConfirmedCash
   if(!sessionRow || sessionRow.revision!==data.expectedSessionRevision || sessionRecord?.recordType!=='cash-session' || sessionRecord.session.storeId!==meta.storeId || sessionRecord.session.id!==record.batch.draft.cashSessionId) throw new Error('Sesi atau revisi tidak sesuai');
   const before=cashBalance(cashMovements(snapshot.receipts.map(r=>JSON.parse(r.payload) as AtomicChange),sessionRecord.session.id),sessionRecord.session);
   return commit(makeConfirmedCashPaymentChange(record.batch,sessionRecord.session,data,meta,before));
- });
+ },beforeCommit);
 }
