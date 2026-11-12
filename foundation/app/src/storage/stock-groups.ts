@@ -8,7 +8,7 @@ type Action='opening'|'correction'|'minimum';
 const key=(id:string)=>`stock-group:${id}`;
 function getRecord(value:unknown):StockRecord { validateBusinessRecord(value); if (!value || typeof value!=='object' || !('recordType' in value) || value.recordType!=='stock-group') throw new Error('Target bukan grup stok'); return value as StockRecord; }
 function number(n:unknown):asserts n is number { if(typeof n!=='number'||!Number.isSafeInteger(n)||n<0) throw new Error('Jumlah stok tidak sah'); }
-function save(db:BerrieDatabase, action:Action, input:unknown, metadata:StockMetadata, locks:LockProvider=navigator.locks, now:()=>string=()=>new Date().toISOString()):Promise<unknown> {
+function save(db:BerrieDatabase, action:Action, input:unknown, metadata:StockMetadata, locks:LockProvider=navigator.locks, now:()=>string=()=>new Date().toISOString(), guard?:()=>void):Promise<unknown> {
  const data=copyInput(input) as Record<string,unknown>, meta=copyInput(metadata) as StockMetadata;
  if(!data || typeof data!=='object' || Array.isArray(data) || typeof data.groupId!=='string' || !data.groupId.trim()) throw new Error('ID grup tidak sah');
  if(typeof meta.recordedAt!=='string' || !Number.isFinite(Date.parse(meta.recordedAt)) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(meta.recordedAt)) throw new Error('Waktu tidak sah');
@@ -29,9 +29,9 @@ function save(db:BerrieDatabase, action:Action, input:unknown, metadata:StockMet
   const ledger=action==='minimum'?[]:[{id:`stock-ledger:${operationId}`,operationId,value:{action,groupId,storeId:meta.storeId,delta:balance-(previous?.balance ?? 0),before:previous?.balance ?? 0,after:balance}}];
   const change:AtomicChange={operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:`stock.${action}`,targetId:groupId,payload:intent,state:[{key:key(groupId),expectedRevision:row?.revision ?? null,value:record}],ledger,audit:[{id:`stock-audit:${operationId}`,operationId,value:{action,groupId,actorId:meta.actorId,policyVersion:meta.policyVersion,occurredAt:meta.recordedAt,recordedAt,before:previous,after:next,reason}}],outbox:{id:`stock-outbox:${operationId}`,operationId,value:{groupId}},result:{groupId,revision,stockGroup:next}};
   return commit(change);
- });
+ },guard);
 }
-export function createStockGroup(db:BerrieDatabase,data:{groupId:string;balance:number;minimum?:number},metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> { return save(db,'opening',data,metadata,locks,now); }
-export function correctStockBaseline(db:BerrieDatabase,data:{groupId:string;value:number;reason:string;expectedRevision:number;expectedBalance:number},metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> {return save(db,'correction',data,metadata,locks,now);}
-export function setStockMinimum(db:BerrieDatabase,data:{groupId:string;value:number;expectedRevision:number;expectedBalance:number},metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> {return save(db,'minimum',data,metadata,locks,now);}
+export function createStockGroup(db:BerrieDatabase,data:{groupId:string;balance:number;minimum?:number},metadata:StockMetadata,locks?:LockProvider,now?:()=>string,guard?:()=>void):Promise<unknown> { return save(db,'opening',data,metadata,locks,now,guard); }
+export function correctStockBaseline(db:BerrieDatabase,data:{groupId:string;value:number;reason:string;expectedRevision:number;expectedBalance:number},metadata:StockMetadata,locks?:LockProvider,now?:()=>string,guard?:()=>void):Promise<unknown> {return save(db,'correction',data,metadata,locks,now,guard);}
+export function setStockMinimum(db:BerrieDatabase,data:{groupId:string;value:number;expectedRevision:number;expectedBalance:number},metadata:StockMetadata,locks?:LockProvider,now?:()=>string,guard?:()=>void):Promise<unknown> {return save(db,'minimum',data,metadata,locks,now,guard);}
 export async function readStockGroup(db:BerrieDatabase,storeId:string,groupId:string):Promise<{stockGroup:StockRecord['stockGroup'];revision:number}|undefined> {if(!storeId?.trim()||!groupId?.trim()) throw new Error('ID tidak sah');const row=await db.state.get(key(groupId));if(!row)return undefined;const group=getRecord(row.value).stockGroup;if(group.storeId!==storeId||group.groupId!==groupId) throw new Error('Identitas toko atau grup berbeda');return {stockGroup:group,revision:row.revision};}
