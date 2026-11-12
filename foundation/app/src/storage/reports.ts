@@ -9,7 +9,7 @@ import { validateCheckpoint } from './validate-checkpoint';
 export type ReportFilter = {kind:'calendar';start:string;end:string;zone:string}|{kind:'session';sessionId:string};
 function validId(value:unknown):value is string {return typeof value==='string' && !!value.trim() && value.length<=200;}
 function calendarDate(v:unknown):v is string {if(typeof v!=='string'||!/^\d{4}-\d\d-\d\d$/.test(v))return false;const d=new Date(`${v}T00:00:00.000Z`);return !Number.isNaN(d.valueOf()) && d.toISOString().slice(0,10)===v;}
-function validateFilter(v:ReportFilter):void {
+export function validateReportFilter(v:ReportFilter):void {
  if(!v || typeof v!=='object')throw new Error('Filter tidak sah');
  if(v.kind==='session'){if(Object.keys(v).sort().join(',')!=='kind,sessionId'||!validId(v.sessionId))throw new Error('Filter sesi tidak sah');return;}
  if(v.kind!=='calendar'||Object.keys(v).sort().join(',')!=='end,kind,start,zone'||!calendarDate(v.start)||!calendarDate(v.end)||v.start>=v.end||!validId(v.zone))throw new Error('Filter kalender tidak sah');
@@ -20,7 +20,7 @@ function selected(filter:ReportFilter,time:string,session:string):boolean {if(fi
 const kinds=new Set(['payment.draft-cash','payment.confirmed-cash','payment.draft-noncash','payment.confirmed-noncash','settlement.draft-free','settlement.confirmed-free']);
 /** Internal read only. T-04 must authorize the caller. */
 export async function readInternalSalesReports(db:BerrieDatabase,storeId:string,filter:ReportFilter) {
- if(!validId(storeId))throw new Error('Toko tidak sah');filter=structuredClone(filter);validateFilter(filter);
+ if(!validId(storeId))throw new Error('Toko tidak sah');filter=structuredClone(filter);validateReportFilter(filter);
  const s=validateCheckpoint(await checkpoint(db));const changes=s.receipts.map(r=>JSON.parse(r.payload) as AtomicChange);const own=changes.filter(c=>c.storeId===storeId);
  if(filter.kind==='session'&&!s.state.some(r=>r.key===`cash-session:${filter.sessionId}`&&(r.value as BusinessRecord)?.recordType==='cash-session'&&((r.value as Extract<BusinessRecord,{recordType:'cash-session'}>).session.storeId===storeId)))throw new Error('Sesi tidak ditemukan');
  const sessionRecord=filter.kind==='session'?s.state.find(r=>r.key===`cash-session:${filter.sessionId}`)?.value as Extract<BusinessRecord,{recordType:'cash-session'}>|undefined:undefined;
