@@ -10,7 +10,7 @@ Konflik nyata antarsesama sumber yang tidak terjawab keputusan tertulis: sebut f
 
 ## Peta file dan tanggung jawab
 
-Setiap file sumber di bawah mempunyai satu peran utama. Baca sesuai tugas; revisi prototipe mengikuti spesifikasi dan design system terkini, dengan bukti/status implementasi pada review dan tasks.
+Setiap file sumber di bawah mempunyai satu peran utama. Baca sesuai tugas; revisi prototipe mengikuti spesifikasi dan design system terkini, dengan bukti implementasi pada review dan satu pelacak aktif.
 
 | File / lokasi | Peran dan kapan digunakan |
 | --- | --- |
@@ -28,18 +28,19 @@ Setiap file sumber di bawah mempunyai satu peran utama. Baca sesuai tugas; revis
 | [specs/10-acceptance-criteria.md](specs/10-acceptance-criteria.md) | AC dan gerbang pilot/rilis; menentukan bukti kelulusan |
 | [specs/11-decisions-and-open-questions.md](specs/11-decisions-and-open-questions.md) | Register D/V dan alasan perubahan; histori keputusan berada di sini |
 | [specs/12-ux-principles.md](specs/12-ux-principles.md) | Prinsip interaksi/bahasa/aksesibilitas, cakupan kemampuan dan UT; dibaca sebelum 02/09 untuk tugas UI |
-| [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) | Sistem desain aktif D-78: palet HEX, font, body/label, spacing, shape, komponen/state, tema/material dan review; histori pada file 11 |
-| [tasks.md](tasks.md) | Status pekerjaan, dependensi, kebutuhan eksternal dan catatan pelaksanaan; bukan bukti otomatis AC/UT lulus |
-| [berrie-site/README.md](berrie-site/README.md) | Petunjuk prototipe Sites lokal, perintah dan batas simulasi |
-| [berrie-site/REVIEW-HISTORY.md](berrie-site/REVIEW-HISTORY.md) | Riwayat gabungan review D-43–70, bukti uji dan identitas versi lama; bukan acuan UI aktif |
-| [berrie-site/REVIEW-PESANAN-D78.md](berrie-site/REVIEW-PESANAN-D78.md) | Bukti/status workspace Pesanan D-78 dan batas verifikasi |
-| [berrie-site/REVIEW-KASIR-D76.md](berrie-site/REVIEW-KASIR-D76.md) | Bukti/status Kasir D-76, tes dan batas simulasi |
-| [berrie-site/REVIEW-KASIR-D71.md](berrie-site/REVIEW-KASIR-D71.md) | Bukti revisi Kasir/Riwayat dan arah visual Jira/Inter, hasil pemeriksaan dan batas simulasi |
-| [berrie-site/REVIEW-ADMIN-LAPORAN-D75.md](berrie-site/REVIEW-ADMIN-LAPORAN-D75.md) | Bukti/status editor, laporan, pengaturan dan staf D-75; batas simulasi dan verifikasi visual |
-| [berrie-site/REVIEW-KAS-LAPORAN-D74.md](berrie-site/REVIEW-KAS-LAPORAN-D74.md) | Bukti Kas tablet/finish bertumpuk dan laporan harian/telusur, batas simulasi laporan |
-| [berrie-site/REVIEW-MENU-KAS-D73.md](berrie-site/REVIEW-MENU-KAS-D73.md) | Bukti form menu agnostik, Kas ringkas dan audit fondasi Atlassian D-73 |
+| [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) | Sistem desain aktif: palet HEX, font, body/label, spacing, shape, komponen/state, tema/material dan review; histori pada file 11 |
+| [tasks.md](tasks.md) | Satu pelacak pelaksanaan aktif (`foundation/tasks.md` di GitHub); status, sisa pekerjaan, baseline dan bukti PR diperbarui bersama kode; bukan bukti otomatis AC/UT lulus |
+| [app/README.md](app/README.md) | Kontrak dan perintah aplikasi operasional pada `foundation/app/` di GitHub |
+| [berrie-site/README.md](../README.md) | Petunjuk prototipe Sites lokal, perintah dan batas simulasi |
+| [berrie-site/REVIEW-HISTORY.md](../REVIEW-HISTORY.md) | Riwayat gabungan review D-43–70, bukti uji dan identitas versi lama; bukan acuan UI aktif |
+| [berrie-site/REVIEW-PESANAN-D78.md](../REVIEW-PESANAN-D78.md) | Bukti/status workspace Pesanan D-78 dan batas verifikasi |
+| [berrie-site/REVIEW-KASIR-D76.md](../REVIEW-KASIR-D76.md) | Bukti/status Kasir D-76, tes dan batas simulasi |
+| [berrie-site/REVIEW-KASIR-D71.md](../REVIEW-KASIR-D71.md) | Bukti revisi Kasir/Riwayat dan arah visual Jira/Inter, hasil pemeriksaan dan batas simulasi |
+| [berrie-site/REVIEW-ADMIN-LAPORAN-D75.md](../REVIEW-ADMIN-LAPORAN-D75.md) | Bukti/status editor, laporan, pengaturan dan staf D-75; batas simulasi dan verifikasi visual |
+| [berrie-site/REVIEW-KAS-LAPORAN-D74.md](../REVIEW-KAS-LAPORAN-D74.md) | Bukti Kas tablet/finish bertumpuk dan laporan harian/telusur, batas simulasi laporan |
+| [berrie-site/REVIEW-MENU-KAS-D73.md](../REVIEW-MENU-KAS-D73.md) | Bukti form menu agnostik, Kas ringkas dan audit fondasi Atlassian D-73 |
 | [review-sites/](review-sites/) | Gambar review historis prototipe; bukan aset produk/target estetika atau izin screenshot baru |
-| [berrie-site/](berrie-site/) | Kode Sites: `app/` UI/style, `lib/berrie/` domain/tes; `components/ui/`, `lib/utils.ts` dependensi UI yang dipakai; favicon di `public/` |
+| [Prototipe Sites](../) | Kode Sites: `app/` UI/style, `lib/berrie/` domain/tes; `components/ui/`, `lib/utils.ts` dependensi UI yang dipakai; favicon di `public/` |
 
 Konfigurasi/manifes/lockfile dan berkas tersembunyi prototipe Sites mengikuti README proyek. Pada Sites, `build/`, `scripts/`, konfigurasi framework dan `.openai/hosting.json` mengatur preview/build/identitas Sites; `lib/connector*`, `app/chatgpt-auth.ts` dan `components/connector-error.tsx` adalah dukungan opsional runtime Sites, bukan fitur POS aktif. `db/`, `drizzle/`, `drizzle.config.ts` dan `cloudflare-env.d.ts` mendukung tooling starter yang masih tercantum pada konfigurasi/perintah. Vendor stylesheet dan lisensinya berpasangan. Tidak menafsirkan dukungan tersebut sebagai backend produksi Berrie.
 
@@ -75,21 +76,18 @@ Jika keputusan produk berubah, perbarui spesifikasi terdampak, register keputusa
 - Restore/migrasi mempertahankan data lama saat gagal; CSV bukan backup. Jangan menyarankan hapus data browser sebagai solusi umum.
 - Satu printer untuk dapur/pelanggan; ulang bertanda SALINAN. Dialog selesai bukan bukti kertas keluar; dukungan perangkat perlu uji fisik.
 
-## Desain dan workflow terkini
+## Acuan desain dan alur
 
-- D-75 (31 Oktober2026): aksi Menu/Stok sticky di atas editor, status draft terlihat/guard keluar, tanpa keterangan perubahan opsional; alasan koreksi tetap. Laporan ringkas/menu/kejadian dan detail disclosure, dasar neto/periode eksplisit. Alias di Tipe menu, Toko pertama/default. Staf dikelola owner online dengan ID tetap/nonaktif, izin aktivitas bersama; PIN hanya simulasi. Acuan/bukti pada review D-75, pemeriksaan visual mengikuti status aktual.
+Baca indeks spesifikasi dan keputusan terbaru, kemudian prinsip UX, alur, layar dan design system sesuai tugas. Kasir/Pesanan, Menu/Stok, Rekap, Pengaturan dan Laporan mengikuti sumber tersebut; review lama hanya bukti versi saat pencatatan. Jangan menyalin ringkasan keputusan bertanggal ke AGENTS sebagai aturan paralel. UI yang disetujui dipakai kembali sesuai AC-101; Sites tetap prototipe sampai integrasi operasional dibuktikan.
 
-- D-74 (13 Oktober2026): Kas breakdown≤640 px kiri/finish bertumpuk kanan pada≥900 px, workspace≤960; sempit satu kolom. Laporan mengutamakan Penjualan/Uang diterima/transaksi/rata-rata/menu penyumbang nilai, refund/gratis kontekstual dan telusur ke pesanan asal. Navigasi tablet atas/HP bawah tetap. D-73 tetap: harga/qty/stok agnostik; varian opsional pada form Tambah menu yang sama; breakdown Kas maksimum640 px. Arah visual Jira/Inter lokal/biru-netral, komponen sendiri; satu UI tanpa pembanding/backup baru. Ikuti DESIGN-SYSTEM.md D-74 (audit dokumentasi resmi Atlassian: radius per peran, font/ikon/tab/state/ruang). UI yang disetujui dipakai kembali sesuai AC-101; Sites tetap prototipe/data contoh, bukan aplikasi operasional. Simpan lokal, tanpa deployment sampai diotorisasi.
-- Kasir: navigasi horizontal Kasir/Pesanan/Riwayat + Kelola toko; D-76 kartu sederhana langsung tambah qty1/Urungkan satu unit draft, berpilihan tetap editor/Tambahkan; Favorit per grup/urutan owner di Menu & Stok; Channel dan default penyajian hanya item berikutnya di kepala pesanan; D-77 Channel/nilai sebaris, tanpa copy terlihat Default penyajian/Untuk item berikutnya, awal Bungkus/dine-in kiri/bungkus kanan; Mulai bertugas saat kas tertutup, Kelola kas/serah-terima tanpa bypass penutupan; qty draft inline; tanpa Item berikutnya di card. Satu filter aktif; Semua/Habis/Promo selalu ada, kategori owner; nol di Habis, nonaktif hanya administrasi. Identitas wajib, pembayaran satu panel, sukses save/process/settle empty+notifikasi/Lihat pesanan, D-72 cetak otomatis sesudah commit: Bayar nanti dapur, bayar dapur batch baru lalu pelanggan/batch lama pelanggan saja; Simpan dulu tanpa cetak/debit dan Edit pesanan dari detail ke Kasir. Struk/ulang di detail tanpa dialog otomatis/konfirmasi kertas/bagikan; ulang SALINAN. Riwayat awal–akhir inklusif/default hari ini zona toko. Pesanan D-78: Aktif/Tersimpan, filter kerja/bayar AND awal Semua; tablet≥900 daftar40/detail60, HP detail penuh/kembali menjaga konteks; aksi sesuai bagian/detail bersama, refund due langsung dan Aksi lainnya. Definisi selesai/integritas tetap.
-- Label Bayar nanti/Bayar/Simpan dulu/Simpan pembayaran/Refund/Catat refund/Pesanan baru dipertahankan. Draft tanpa debit; commit mengonfirmasi tepat sekali. Simpan gagal mempertahankan input; unknown diperiksa dari operasi yang sama.
-- Font Inter lokal/OFL, target44×44, keyboard/fokus/zoom/kontras/status selain warna. Tablet1024×768/default target8 kartu pendek dan3 baris pesanan normal penuh; nama panjang tumbuh/gulir. HP baseline360; review komponen di luar alur kasir.
-- Administrasi mengikuti D-61–69/file03/06/07: variabel owner/harga dasar+tambahan nonnegatif/default pertama; kategori wajib/CRUD kategori-tipe/tambah inline; pustaka diskon reusable persen/potongan/Beli X gratis Y dan jadwal mulai–selesai opsional zona toko. Tanpa impor. Menu/Stok/Rekap gulir vertikal/header sticky, row≥64/input≥56. Hapus/log actor-waktu, Batal/Simpan kontekstual simetris, stok satu row/menu/baseline beralasan/minimal editable/sisa read-only. Kas ringkas/satu saldo tercatat/hitung buta/label hitungan akhir/blocker tetap. Detail mengikuti specs, bukan histori review.
+## Pelacakan dan verifikasi
 
-## Status dan verifikasi
-
-Per 1 November 2026: root memiliki Git lokal baru; `berrie-site/` tetap Git sendiri dan dikecualikan dari root. Versi layanan terakhir12 (D-69), identitas pada tasks. Pemilik menyetujui arah visual dan alur D-71; sumber/pemeriksaan lokal pada REVIEW-KASIR-D71.md, REVIEW-KAS-LAPORAN-D74.md/tasks, belum disimpan menjadi versi layanan baru/deployment. Rujukan D-01–78, V-01–10, AC-01–172, UT-01–49. Scaffold T-01 berada di `app/`; T-02/T-03 masih berjalan, dan aplikasi operasional, uji peserta/perangkat fisik/gerbang pilot belum selesai. Periksa keadaan aktual sebelum bekerja.
-
-- Perintah scaffold operasional tercatat pada `app/README.md`; perintah Sites tersedia pada README/manifest Sites: dev/build/typecheck/lint/test; tidak ada test:browser. Jangan melaporkan perintah yang tidak ada sebagai lulus.
-- Scaffold baru harus menyediakan dan mendokumentasikan dev/build/typecheck/lint/test nyata. Untuk perubahan kode, jalankan pemeriksaan relevan dan regresi perilaku bermakna; prioritaskan domain uang/property, transaksi/isolasi/migrasi serta offline/retry/crash.
-- Petakan perubahan ke AC/UT terkait; happy path checkout tidak membuktikan integritas/pilot. Dokumen saja: periksa konsistensi, tautan dan rujukan/dependensi berkas, tanpa tes aplikasi yang tidak relevan.
-- Catat batas pengujian; tes otomatis tidak menggantikan printer fisik, restore drill, keamanan, performa perangkat dan peserta UT. Jangan menyatakan siap pilot/rilis sebelum gerbang file 10 punya bukti.
+- Di repo GitHub, root adalah prototipe Sites; `foundation/app/` aplikasi operasional dan `foundation/specs/` spesifikasi yang ikut repository. Pelacak aktif hanya `foundation/tasks.md`; jangan membuat salinan status kedua pada root repo atau app.
+- Bila bekerja dari workspace pemilik dengan repository induk terpisah, periksa juga instruksi induk dan keputusan terbaru pemilik. Salinan spesifikasi bernama sama belum tentu identik; laporkan konflik nyata beserta file, aturan, dampak dan rekomendasi tanpa mengganti aturan bisnis sepihak.
+- Sebelum memilih scope PR, periksa remote `main`, commit baseline, PR merged/terbuka, status checkout dan perubahan pengguna. Gunakan clone/worktree terpisah jika checkout tidak boleh diubah. Bila jaringan tidak tersedia, nyatakan keterbatasannya; jangan menyebut ref lokal sebagai keadaan remote terbaru.
+- Setiap perubahan implementasi wajib memperbarui bagian Posisi sekarang, status tugas terkait, pemetaan bukti kode/PR, pekerjaan tersisa, dependensi paket dan bukti pemeriksaan pada pelacak dalam perubahan yang sama. Catatan tambahan di akhir tidak menggantikan ringkasan/tabel. Cocokkan pelacak dengan diff sebelum commit/PR; bila status tetap Berjalan, jelaskan bagian yang bertambah dan yang belum selesai. Jangan memperbarui tanggal saja.
+- Cantumkan baseline commit dan bukti PR/commit yang sudah tersedia. Setelah merge, verifikasi commit merge sebelum mengklaim merged. Persetujuan spesifikasi, tes primitive atau PR parsial tidak menyelesaikan seluruh T/AC/UT.
+- Ikuti perintah pada README dan manifest aplikasi yang benar. Fondasi Vite memiliki dev/build/typecheck/lint/test/test:browser; prototipe Sites mempunyai perintah tersendiri. Jangan mengklaim perintah yang tidak tersedia atau tidak dijalankan sebagai lulus.
+- Untuk perubahan kode, jalankan pemeriksaan relevan dan regresi perilaku bermakna; prioritaskan uang/property, transaksi/isolasi/migrasi, offline/retry/crash. Dokumen saja: periksa konsistensi, tautan dan rujukan/dependensi, tanpa tes aplikasi yang tidak relevan.
+- Sebelum menghapus dokumen, periksa pemakaian dan informasi unik; pindahkan bukti yang masih diperlukan ke sumber aktif, perbarui seluruh rujukan, lalu hapus. Jangan menyimpan salinan cadangan dokumen yang dipensiunkan atau menghapus kode/config/runtime untuk merapikan dokumen.
+- Laporkan hasil aktual dan batas pengujian. Tes otomatis tidak menggantikan printer fisik, restore drill, keamanan, performa perangkat dan peserta UT. Kesiapan pilot/rilis hanya dinyatakan jika gerbang file 10 mempunyai bukti.
