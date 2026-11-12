@@ -37,7 +37,7 @@ export async function requireMethods(db:BerrieDatabase,storeId:string,data:Nonca
  return {id:storeId,revision:row.revision};
 }
 /** Internal only; T-04 must authorize actor, device and session. */
-export function payConfirmedFirstBatchNoncash(db:BerrieDatabase,input:ConfirmedNoncashInput,metadata:StockMetadata,locks:LockProvider=navigator.locks):Promise<unknown> {
+export function payConfirmedFirstBatchNoncash(db:BerrieDatabase,input:ConfirmedNoncashInput,metadata:StockMetadata,locks:LockProvider=navigator.locks,beforeCommit?:()=>void):Promise<unknown> {
  const data=copyInput(input) as ConfirmedNoncashInput,meta=copyInput(metadata) as StockMetadata,intent={data,metadata:meta};canonical(intent);
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
@@ -51,5 +51,5 @@ export function payConfirmedFirstBatchNoncash(db:BerrieDatabase,input:ConfirmedN
   const sessionSource=await requireOrderSession(db,meta.storeId,record.batch.draft.cashSessionId);if(sessionSource.revision!==data.expectedSessionRevision) throw new Error('Revisi sesi berubah');
   const methodsSource=await requireMethods(db,meta.storeId,data);
   return commit(makeConfirmedNoncashChange(record.batch,data,meta,sessionSource,methodsSource));
- });
+ },beforeCommit);
 }

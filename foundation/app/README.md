@@ -348,3 +348,13 @@ Pembacaan memakai checkpoint konsisten tervalidasi dan tidak mengubah data bisni
 Bukti ini parsial AC-17/40/41/77 dan regresi integritas AC-20/30/39/48; bukan penyelesaian AC, T-04, UT peserta atau pilot. Tidak ada UI, konfirmasi batch, koreksi penyajian, pembayaran/refund, approval execution, penerbit permit/auth produksi, server/sync atau backup produksi. Pengujian lokal tidak membuktikan keamanan perangkat, pencabutan offline segera, sumber waktu saat seluruh instance tertutup, perangkat fisik atau restore drill.
 
 Pemeriksaan clone berurutan: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (694 tes), `npm run test:browser` (108 Chrome), dan `npm run build` lulus. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.
+
+### Pembayaran batch confirmed berizin (parsial T-04/T-10)
+
+`AuthorizedPayments` menyediakan `payCash`, `payNoncash` dan `readMethods` sebagai batas internal untuk batch pertama yang sudah confirmed. Identitas serta versi policy audit berasal dari PIN aktif dan permit ES256 v2/policy terverifikasi; input dan metadata operasi disalin dan divalidasi sebelum antre. Lock PIN → permit → writer dan penjaga sinkron sebelum commit maupun replay berlaku. Setelah expiry hanya owner boleh membayar bila seluruh unit terbukti tersimpan sebelum batas melalui checkpoint dan receipt tervalidasi; owner dapat membaca metode dalam mode terbatas. Staf memerlukan permit aktif dan clock fault menolak semua.
+
+Tunai menyimpan nilai bersih penjualan pada ledger, bukan uang yang diterima; non-tunai memerlukan metode aktif/revisi sesuai serta pernyataan verifikasi manual. Verifikasi manual bukan bukti dari penyedia. Tidak ada debit stok ulang. Hitungan aktif dan sesi tertutup menahan operasi; replay identik memakai receipt, konflik ditolak. Hasil tidak mengekspos saldo laci atau receipt mentah. Primitive mentah tetap internal dan kode tepercaya yang memanggilnya langsung tidak dilindungi gateway.
+
+Bukti hanya parsial AC-20/22–24/30/39–41/48/77, bukan kelulusan AC, T-04/T-10 atau pilot. Pembayaran draft, Rp0, koreksi metode, refund, konfigurasi metode berizin, UI, approval execution, penerbit permit/auth produksi, server/sync, printer dan backup produksi belum termasuk. Tes lokal tidak membuktikan keamanan perangkat, pencabutan offline segera, jam saat seluruh instance tertutup, perangkat fisik atau restore drill.
+
+Pemeriksaan clone berurutan: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (725 tes), `npm run test:browser` (112 tes Chrome), dan `npm run build` lulus. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.
