@@ -762,3 +762,11 @@ Baseline inspeksi `origin/main` `8e9dfb6` (PR #47 merged; tidak ada PR duplikat 
 Bukti parsial AC-36: kesetaraan filter dan tujuh CSV, UTF-8/formula dan penolakan incomplete; AC-40/41: expiry owner dan clock fault; AC-77/78: identitas, PIN, permit/policy dan penolakan staf pada tiga mode untuk jalur ini. Tes tidak membuktikan seluruh kategori ekspor, matriks UI/server, keamanan produksi atau AC penuh. UT-11 belum diuji peserta. T-04/T-14 tetap Menunggu; tidak ada penerbit/auth produksi, UI, approval, server/sync, backup atau bukti pilot.
 
 Pemeriksaan clone `foundation/app` berurutan: `npm ci --legacy-peer-deps`, typecheck, lint, 603 tes unit/storage, 106 tes Chrome IndexedDB/Web Locks dan build lulus. Regresi hitung buta kas ikut dijalankan; laporan berizin diuji bersamaan koreksi stok dua tab, reload dan penolakan tanpa perubahan checkpoint bisnis. Audit npm melaporkan tujuh kerentanan moderate; pembaruan dependensi di luar cakupan.
+
+### Gateway grup stok berizin — T-04/T-07 (parsial)
+
+Baseline `origin/main` `5e6567aea4ff9d4defacd08f863dc74f70fb719d` (PR #48 merged). [Kontrak gateway](app/README.md#gateway-grup-stok-berizin-parsial-t-04t-07) mencakup opening owner, koreksi beralasan melalui matriks dan minimum owner; permit expired/clock fault menolak seluruh mutasi dan replay. Lock PIN → permit → writer, penjaga pada commit/replay dan transaksi existing menjaga serialisasi dan histori. Tidak ada UI atau integrasi approval, auth produksi, server/sync dan backup; pengecualian koreksi untuk penyelesaian unit tersimpan belum termasuk.
+
+Bukti parsial AC-77/78/134 mencakup identitas, permit/policy, matriks dan batas gateway; regresi AC-20/30/39/48 mencakup persaingan, replay, rollback dan checkpoint/staging. Bukti ini tidak meluluskan AC, UT peserta, T-04/T-07 atau pilot. Perangkat fisik, keamanan produksi dan restore drill tetap memerlukan verifikasi terpisah.
+
+Pemeriksaan clone `foundation/app`: `npm ci --legacy-peer-deps`, typecheck, lint, 632 tes unit/storage, 107 tes browser Chrome dan build lulus. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.
