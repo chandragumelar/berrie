@@ -28,7 +28,7 @@ export function makeServingChange(batch:FirstBatch, before:ServingState|null, da
 }
 
 /** Internal only: callers must obtain authorization separately through T-04. */
-function save(db:BerrieDatabase,input:ServingInput,metadata:StockMetadata,action:ServingAction,locks:LockProvider=navigator.locks):Promise<unknown> {
+function save(db:BerrieDatabase,input:ServingInput,metadata:StockMetadata,action:ServingAction,locks:LockProvider=navigator.locks,beforeCommit?:()=>void):Promise<unknown> {
  const data=copyInput(input) as ServingInput,meta=copyInput(metadata) as StockMetadata,intent={data,metadata:meta};canonical(intent);
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
@@ -46,9 +46,9 @@ function save(db:BerrieDatabase,input:ServingInput,metadata:StockMetadata,action
   if(refundRow && refundRecord?.recordType!=='served-refunds') throw new Error('Histori refund tidak sah');
   const refundSource={revision:refundRow?.revision ?? null,unitIds:refundRecord?.recordType==='served-refunds'?refundRecord.refunds.flatMap(r=>r.units.map(u=>u.id)):[]};
   return commit(makeServingChange(value.batch,before,data,meta,action,sessionSource,refundSource));
- });
+ },beforeCommit);
 }
-export function serveUnits(db:BerrieDatabase,data:ServingInput,metadata:StockMetadata,locks?:LockProvider):Promise<unknown> {return save(db,data,metadata,'serve',locks);}
+export function serveUnits(db:BerrieDatabase,data:ServingInput,metadata:StockMetadata,locks?:LockProvider,beforeCommit?:()=>void):Promise<unknown> {return save(db,data,metadata,'serve',locks,beforeCommit);}
 export function correctServing(db:BerrieDatabase,data:ServingInput,metadata:StockMetadata,locks?:LockProvider):Promise<unknown> {return save(db,data,metadata,'correct',locks);}
 export async function readServing(db:BerrieDatabase,storeId:string,orderId:string):Promise<{serving:ServingState;revision:number|null}> {
  return db.transaction('r',db.state,async()=>{

@@ -1,6 +1,6 @@
 import { permitExpiry } from '../domain/offline-permit';
 import { validateBusinessRecord, type BusinessRecord } from '../domain/business-record';
-import { checkpoint } from './recovery';
+import { checkpoint, type Snapshot } from './recovery';
 import { validateCheckpoint } from './validate-checkpoint';
 import type { BerrieDatabase } from './database';
 import { canonical, type AtomicChange } from './commit';
@@ -39,8 +39,11 @@ export async function evaluatePermit(storage:OfflinePermitStorage,pin:LocalPinSe
 }
 
 async function storedUnitBefore(db:BerrieDatabase,storeId:string,unit:{orderId:string;unitId:string},expiry:number):Promise<boolean> {
+ return storedUnitBeforeSnapshot(validateCheckpoint(await checkpoint(db)),storeId,unit,expiry);
+}
+/** Caller must pass a validated, consistent checkpoint under the writer lock. */
+export function storedUnitBeforeSnapshot(snapshot:Snapshot,storeId:string,unit:{orderId:string;unitId:string},expiry:number):boolean {
  if(!unit || typeof unit.orderId!=='string' || typeof unit.unitId!=='string') return false;
- const snapshot=validateCheckpoint(await checkpoint(db));
  const batch=snapshot.state.find(x=>x.key===`first-batch:${unit.orderId}`);
  const row=batch ?? snapshot.state.find(x=>x.key===`draft:${unit.orderId}`);
  if(!row) return false;

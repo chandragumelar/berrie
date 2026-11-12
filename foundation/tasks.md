@@ -786,3 +786,9 @@ Baseline `origin/main` `f3357a7` (PR #50); tidak ada PR terbuka saat pemeriksaan
 Bukti parsial AC-77/78: batas PIN/permit dan tiga mode staf; AC-123: saldo bersama dan rekonsiliasi kejadian; regresi AC-20/30: persaingan/replay; AC-39: rollback koleksi; AC-48: checkpoint/staging. Ini bukan kelulusan AC, T-04/T-07/T-14 atau pilot. Tidak ada UI, approval execution, penerbit/auth produksi, server/sync, backup atau migrasi legacy; keamanan produksi, perangkat fisik dan restore drill belum dibuktikan. Kontrak terperinci pada [README aplikasi](app/README.md).
 
 Pemeriksaan clone berurutan: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (673 tes), `npm run test:browser` (107 tes Chrome), `npm run build`, dan `git diff --check`. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.
+
+### Gateway penyajian dan pembacaan status berizin
+
+Irisan parsial: `AuthorizedServing` mengikat baca penyajian/status dan penyajian unit ke PIN, permit/policy v2, actor aktif dan identitas database; lock PIN → permit → writer dan penjaga commit/replay berlaku. Owner mode terbatas hanya menyajikan seluruh pilihan yang terbukti lama pada checkpoint/receipt tervalidasi; staf ditolak setelah expiry dan clock fault menolak semua. Penyajian parsial tidak mengubah stok atau uang. Tes storage dan browser mencakup replay/konflik, rollback, perubahan izin saat antre, expiry, pilihan campuran, staging dan persaingan dua tab. Pemetaan parsial AC-17/40/41/77 dan regresi AC-20/30/39/48; AC penuh, T-04, UT peserta dan pilot belum selesai. Batas implementasi dan pemeriksaan dicatat di [README app](app/README.md).
+
+Pemeriksaan clone berurutan: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (694 tes), `npm run test:browser` (108 Chrome), dan `npm run build` lulus. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.
