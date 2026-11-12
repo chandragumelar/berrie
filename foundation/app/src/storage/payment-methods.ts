@@ -16,7 +16,7 @@ export function makePaymentMethodsChange(data:PaymentMethodsInput, meta:StockMet
  return {operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:'payment-methods.set',targetId:meta.storeId,payload:{data,metadata:meta},state:[{key:paymentMethodsKey(meta.storeId),expectedRevision:data.expectedRevision,value:{recordType:'payment-methods',schemaVersion:1,methods}}],ledger:[],audit:[{id:`payment-methods-audit:${operationId}`,operationId,value:{before,after:methods,actorId:meta.actorId,policyVersion:meta.policyVersion,recordedAt:meta.recordedAt}}],outbox:{id:`payment-methods-outbox:${operationId}`,operationId,value:{storeId:meta.storeId}},result:{methods,revision}};
 }
 /** Internal only; T-04 must authorize owner and device before integration. */
-export function setPaymentMethods(db:BerrieDatabase,input:PaymentMethodsInput,metadata:StockMetadata,locks:LockProvider=navigator.locks):Promise<unknown> {
+export function setPaymentMethods(db:BerrieDatabase,input:PaymentMethodsInput,metadata:StockMetadata,locks:LockProvider=navigator.locks,guard?:()=>void):Promise<unknown> {
  const data=copyInput(input) as PaymentMethodsInput,meta=copyInput(metadata) as StockMetadata,intent={data,metadata:meta};canonical(intent);
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
@@ -26,7 +26,7 @@ export function setPaymentMethods(db:BerrieDatabase,input:PaymentMethodsInput,me
   let before:PaymentMethods|null=null;
   if(row) {validateBusinessRecord(row.value);const v=row.value as {recordType?:unknown;methods?:unknown};if(v?.recordType!=='payment-methods') throw new Error('Record metode tidak sah');validatePaymentMethods(v.methods);before=v.methods;}
   return commit(makePaymentMethodsChange(data,meta,before));
- });
+ },guard);
 }
 export async function readPaymentMethods(db:BerrieDatabase,storeId:string):Promise<{methods:PaymentMethods;revision:number|null}> {
  if(typeof storeId!=='string' || !storeId.trim() || storeId.length>200) throw new Error('Toko tidak sah');
