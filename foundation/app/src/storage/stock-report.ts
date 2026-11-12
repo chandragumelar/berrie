@@ -35,7 +35,7 @@ export async function readInternalStockReport(db:BerrieDatabase,storeId:string):
    const before=prior?.balance??0, after=next.balance, delta=after-before;
    if(!Number.isSafeInteger(delta)) throw new Error('Delta stok melampaui batas aman');
    if(c.kind==='stock.minimum') {prior=next;continue;}
-   const kind=c.kind==='stock.opening'?'opening':c.kind==='stock.correction'?'correction':debits.has(c.kind)?'debit':returns.has(c.kind)?'return':null;
+   const kind=c.kind==='stock.opening'?'opening':c.kind==='stock.correction'?'correction':c.kind==='stock.in'?'in':debits.has(c.kind)?'debit':returns.has(c.kind)?'return':null;
    if(!kind) {incomplete.push({key:row.key,reason:`Operasi stok ${c.kind} belum didukung`});prior=next;continue;}
    const matches=c.ledger.filter(l=>(l.value as EventValue)?.groupId===group.groupId);
    if(matches.length!==1) throw new Error('Histori ledger stok tidak cocok');

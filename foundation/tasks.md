@@ -778,3 +778,11 @@ Perluasan `AuthorizedStock` menyediakan registrasi create-only dan baca pemetaan
 Bukti parsial AC-77/78 meliputi identitas PIN, permit/policy dan batas owner/staf pada gateway ini. Regresi parsial AC-20/30 meliputi antrean, persaingan dua tab dan replay/reload; AC-39 rollback koleksi yang ditulis; AC-48 kompatibilitas checkpoint/staging yang ada; AC-65 rencana stok draft advisory dan snapshot saldo/revisi, belum UI atau penanganan pesanan lunas. Bukti ini tidak meluluskan AC penuh, T-04/T-07, UT peserta atau pilot. Keamanan produksi, perangkat fisik dan restore drill tetap membutuhkan verifikasi terpisah.
 
 Pemeriksaan clone: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (651 tes), `npm run test:browser` (107 tes Chrome) dan `npm run build` lulus. `npm ci` melaporkan 7 kerentanan audit tingkat sedang pada dependensi existing; dependensi tidak diubah dalam irisan ini.
+
+### Stok masuk berizin dan dapat ditelusuri
+
+Baseline `origin/main` `f3357a7` (PR #50); tidak ada PR terbuka saat pemeriksaan. `AuthorizedStock.stockIn` menambah saldo grup existing dengan quantity positif dan keterangan, tanpa mengubah baseline/minimum/mapping. Pemeriksaan identitas, policy `stock-in`, lock, expiry/clock, revisi/saldo, receipt dan atomisitas mengikuti gateway stok; approval tidak mengeksekusi. Histori dan laporan/CSV mempertahankan delta, saldo, actor, waktu, keterangan dan operation ID; sumber incomplete tetap menahan ekspor.
+
+Bukti parsial AC-77/78: batas PIN/permit dan tiga mode staf; AC-123: saldo bersama dan rekonsiliasi kejadian; regresi AC-20/30: persaingan/replay; AC-39: rollback koleksi; AC-48: checkpoint/staging. Ini bukan kelulusan AC, T-04/T-07/T-14 atau pilot. Tidak ada UI, approval execution, penerbit/auth produksi, server/sync, backup atau migrasi legacy; keamanan produksi, perangkat fisik dan restore drill belum dibuktikan. Kontrak terperinci pada [README aplikasi](app/README.md).
+
+Pemeriksaan clone berurutan: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (673 tes), `npm run test:browser` (107 tes Chrome), `npm run build`, dan `git diff --check`. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.
