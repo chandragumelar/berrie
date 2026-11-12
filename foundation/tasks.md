@@ -770,3 +770,11 @@ Baseline `origin/main` `5e6567aea4ff9d4defacd08f863dc74f70fb719d` (PR #48 merged
 Bukti parsial AC-77/78/134 mencakup identitas, permit/policy, matriks dan batas gateway; regresi AC-20/30/39/48 mencakup persaingan, replay, rollback dan checkpoint/staging. Bukti ini tidak meluluskan AC, UT peserta, T-04/T-07 atau pilot. Perangkat fisik, keamanan produksi dan restore drill tetap memerlukan verifikasi terpisah.
 
 Pemeriksaan clone `foundation/app`: `npm ci --legacy-peer-deps`, typecheck, lint, 632 tes unit/storage, 107 tes browser Chrome dan build lulus. Audit npm melaporkan tujuh kerentanan moderate; dependensi tidak diubah.
+
+### Gateway pemetaan SKU dan konteks stok draft — T-04/T-07 (parsial)
+
+Perluasan `AuthorizedStock` menyediakan registrasi create-only dan baca pemetaan untuk owner serta rencana draft read-only bagi owner/staf kasir aktif. Kontrak, batas mode terbatas dan kewajiban validasi ulang saat konfirmasi dijelaskan di [README aplikasi](app/README.md#gateway-pemetaan-dan-konteks-stok-draft-parsial-t-04t-07). Tidak ada debit atau ledger baru pada registrasi/rencana, perubahan katalog atau remapping.
+
+Bukti parsial AC-77/78 meliputi identitas PIN, permit/policy dan batas owner/staf pada gateway ini. Regresi parsial AC-20/30 meliputi antrean, persaingan dua tab dan replay/reload; AC-39 rollback koleksi yang ditulis; AC-48 kompatibilitas checkpoint/staging yang ada; AC-65 rencana stok draft advisory dan snapshot saldo/revisi, belum UI atau penanganan pesanan lunas. Bukti ini tidak meluluskan AC penuh, T-04/T-07, UT peserta atau pilot. Keamanan produksi, perangkat fisik dan restore drill tetap membutuhkan verifikasi terpisah.
+
+Pemeriksaan clone: `npm ci --legacy-peer-deps`, `npm run typecheck`, `npm run lint`, `npm test` (651 tes), `npm run test:browser` (107 tes Chrome) dan `npm run build` lulus. `npm ci` melaporkan 7 kerentanan audit tingkat sedang pada dependensi existing; dependensi tidak diubah dalam irisan ini.
