@@ -10,7 +10,7 @@ export function mappingRecord(value:unknown):MappingRecord {
  return value as MappingRecord;
 }
 /** Internal command; metadata does not establish authorization. */
-export function registerSkuStockMapping(db:BerrieDatabase,input:unknown,metadata:StockMetadata,locks:LockProvider=navigator.locks,now:()=>string=()=>new Date().toISOString()):Promise<unknown> {
+export function registerSkuStockMapping(db:BerrieDatabase,input:unknown,metadata:StockMetadata,locks:LockProvider=navigator.locks,now:()=>string=()=>new Date().toISOString(),guard?:()=>void):Promise<unknown> {
  const data=copyInput(input), meta=copyInput(metadata) as StockMetadata;
  if(!data || typeof data!=='object' || Array.isArray(data)) throw new Error('Pemetaan tidak sah');
  const fields=data as Record<string,unknown>;
@@ -28,10 +28,11 @@ export function registerSkuStockMapping(db:BerrieDatabase,input:unknown,metadata
   const operationId=meta.operationId, recordedAt=now();
   const change:AtomicChange={operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:'mapping.create',targetId:m.skuId,payload:intent,state:[{key:mappingKey(m.storeId,m.skuId),expectedRevision:null,value:record}],ledger:[],audit:[{id:`mapping-audit:${operationId}`,operationId,value:{mapping:m,actorId:meta.actorId,policyVersion:meta.policyVersion,occurredAt:meta.recordedAt,recordedAt}}],outbox:{id:`mapping-outbox:${operationId}`,operationId,value:{skuId:m.skuId}},result:{mapping:m,revision:0}};
   return commit(change);
- });
+ },guard);
 }
 export async function readSkuStockMapping(db:BerrieDatabase,storeId:string,skuId:string):Promise<{mapping:MappingRecord['mapping'];revision:number}|undefined> {
  createSkuStockMappingRecord({storeId,skuId,groupId:'validation'});
  const row=await db.state.get(mappingKey(storeId,skuId));if(!row)return undefined;
+ if(row.revision!==0) throw new Error('Revisi pemetaan tidak sah');
  const mapping=mappingRecord(row.value).mapping;if(mapping.storeId!==storeId || mapping.skuId!==skuId) throw new Error('Identitas pemetaan berbeda');return {mapping,revision:row.revision};
 }

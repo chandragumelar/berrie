@@ -82,3 +82,48 @@ it('permit hilang atau kunci verifikasi salah menolak tanpa efek',async()=>{cons
 it.each(['sequences','state','audit','outbox','receipts'] as const)('rollback minimum pada kegagalan %s',async table=>{const s=await setup();try{
  await s.gateway.createStockGroup(s.identity,open,op('open',1));const before=await checkpoint(s.db),hook=()=>{throw new Error('failed')};s.db[table].hook('creating',hook);s.db[table].hook('updating',hook);expect(await s.gateway.setStockMinimum(s.identity,{...minimum,expectedRevision:0,expectedBalance:0},op('m',2))).toEqual({status:'denied'});s.db[table].hook('creating').unsubscribe(hook);s.db[table].hook('updating').unsubscribe(hook);expect(await checkpoint(s.db)).toEqual(before);
  }finally{s.close();}});
+it('pemetaan owner create-only, replay dan pembacaan tidak mengubah checkpoint',async()=>{const s=await setup();try{
+ await s.gateway.createStockGroup(s.identity,{groupId:'g',balance:2},op('open',1));
+ const mapping={skuId:'sku',groupId:'g'};
+ expect(await s.gateway.registerSkuStockMapping(s.identity,mapping,op('map',2))).toEqual({status:'ok',groupId:'g',revision:0});
+ const before=await checkpoint(s.db);
+ expect(await s.gateway.registerSkuStockMapping(s.identity,mapping,op('map',2))).toEqual({status:'ok',groupId:'g',revision:0});
+ expect(await s.gateway.registerSkuStockMapping(s.identity,{...mapping,groupId:'other'},op('map',2))).toEqual({status:'denied'});
+ expect(await s.gateway.registerSkuStockMapping(s.identity,mapping,op('duplicate',3))).toEqual({status:'denied'});
+ expect(await s.gateway.readSkuStockMapping(s.identity,{id:'sku'})).toMatchObject({status:'ok',value:{mapping:{skuId:'sku',groupId:'g'},revision:0}});
+ expect(await s.gateway.readSkuStockMapping(s.identity,{id:'sku',extra:true} as {id:string})).toEqual({status:'denied'});
+ expect(await checkpoint(s.db)).toEqual(before);
+ }finally{s.close();}});
+it.each(['allow','approval','owner-only'] as const)('pemetaan tetap owner-only pada mode %s',async mode=>{const s=await setup('staff',mode);try{
+ const before=await checkpoint(s.db);expect(await s.gateway.registerSkuStockMapping(s.identity,{skuId:'sku',groupId:'g'},op('map',1))).toEqual({status:'denied'});expect(await s.gateway.readSkuStockMapping(s.identity,{id:'sku'})).toEqual({status:'denied'});expect(await checkpoint(s.db)).toEqual(before);
+ }finally{s.close();}});
+it.each(['sequences','state','audit','outbox','receipts'] as const)('rollback registrasi pemetaan pada %s',async table=>{const s=await setup();try{
+ await s.gateway.createStockGroup(s.identity,{groupId:'g',balance:1},op('open',1));const before=await checkpoint(s.db),hook=()=>{throw new Error('failed')};s.db[table].hook('creating',hook);s.db[table].hook('updating',hook);
+ expect(await s.gateway.registerSkuStockMapping(s.identity,{skuId:'sku',groupId:'g'},op('map',2))).toEqual({status:'denied'});s.db[table].hook('creating').unsubscribe(hook);s.db[table].hook('updating').unsubscribe(hook);expect(await checkpoint(s.db)).toEqual(before);
+ }finally{s.close();}});
+it.each(['owner','staff'] as const)('%s mendapat rencana draft tanpa mutasi atau receipt',async role=>{const s=await setup(role);try{
+ const {createStockGroup}=await import('./stock-groups'),{registerSkuStockMapping}=await import('./sku-stock-mappings'),{openCashSession}=await import('./cash-sessions'),{createDraft}=await import('./drafts');
+ const metadata=(operationId:string,localSequence:number)=>({...op(operationId,localSequence),storeId:'store',deviceId:'device',deviceEpoch:1,actorId:'actor',policyVersion:1});
+ const orderId='00000000-0000-4000-8000-000000000001',sessionId='00000000-0000-4000-8000-000000000003',skuId='00000000-0000-4000-8000-000000000006';
+ const draft={orderId,displayNumber:'261101-E1-0001',cashSessionId:sessionId,customer:'A',channel:'store',channelAccountId:'',externalOrderId:'',serving:'takeaway',note:'',savedAt:'2026-11-01T00:00:00Z',items:[{id:'00000000-0000-4000-8000-000000000004',unitIds:['00000000-0000-4000-8000-000000000005'],skuId,name:'Kopi',skuPrice:10000,toppingPrice:0,promo:{kind:'none',revision:0},choices:[],toppings:[],serving:'takeaway',note:''}],discount:{kind:'none'},taxBp:0,serviceBp:0};
+ await openCashSession(s.db,{sessionId,number:'1',initialCustodian:'actor',openingAmount:0,timeZone:'Asia/Jakarta'},{...metadata('cash',1),deviceId:'cash-device'},s.lock);
+ await createStockGroup(s.db,{groupId:'g',balance:2},metadata('open',1),s.lock);await registerSkuStockMapping(s.db,{skuId,groupId:'g'},metadata('map',2),s.lock);await createDraft(s.db,draft,{...metadata('draft',3),storeTimeZone:'Asia/Jakarta'},s.lock,()=>draft.savedAt);
+ const before=await checkpoint(s.db),result=await s.gateway.planStoredDraftStock(s.identity,{id:orderId});expect(result).toMatchObject({status:'ok',value:{plan:{ok:true,debits:[{required:1,after:1}]},sources:{draftRevision:0,groups:[{balance:2,revision:0}]}}});expect(JSON.stringify(result)).not.toContain('receipt');expect(await checkpoint(s.db)).toEqual(before);
+ s.advance(7*86400000);await s.pin.unlock(s.identity,'123456');expect(await s.gateway.planStoredDraftStock(s.identity,{id:orderId})).toEqual({status:'denied'});if(role==='owner')expect((await s.gateway.readSkuStockMapping(s.identity,{id:skuId})).status).toBe('ok');expect(await checkpoint(s.db)).toEqual(before);
+ }finally{s.close();}});
+it('registrasi menyalin input sebelum antre dan menolak field tambahan',async()=>{const s=await setup();try{
+ await s.gateway.createStockGroup(s.identity,open,op('open',1));let release!:()=>void,entered!:()=>void;const gate=new Promise<void>(r=>release=r),ready=new Promise<void>(r=>entered=r),held=s.lock.request(`berrie-writer:${s.db.name}`,async()=>{entered();await gate;});await ready;
+ const input={skuId:'sku',groupId:'g'},operation=op('map',2),identity={...s.identity},pending=s.gateway.registerSkuStockMapping(identity,input,operation);input.skuId='changed';operation.operationId='changed';identity.actorId='changed';release();await held;expect(await pending).toEqual({status:'ok',groupId:'g',revision:0});const before=await checkpoint(s.db);expect(await s.gateway.registerSkuStockMapping(s.identity,{skuId:'x',groupId:'g',extra:true} as {skuId:string;groupId:string},op('x',3))).toEqual({status:'denied'});expect(await checkpoint(s.db)).toEqual(before);
+ }finally{s.close();}});
+it.each(['expiry','clock'] as const)('registrasi dan rencana menolak %s; baca owner hanya menerima expiry',async failure=>{const s=await setup();try{
+ await s.gateway.createStockGroup(s.identity,open,op('open',1));await s.gateway.registerSkuStockMapping(s.identity,{skuId:'sku',groupId:'g'},op('map',2));const before=await checkpoint(s.db);if(failure==='expiry'){s.advance(7*86400000);await s.pin.unlock(s.identity,'123456');}else s.wall(s.now()+5000);
+ expect(await s.gateway.registerSkuStockMapping(s.identity,{skuId:'sku',groupId:'g'},op('map',2))).toEqual({status:'denied'});expect(await s.gateway.planStoredDraftStock(s.identity,{id:'missing'})).toEqual({status:'denied'});expect((await s.gateway.readSkuStockMapping(s.identity,{id:'sku'})).status).toBe(failure==='expiry'?'ok':'denied');expect(await checkpoint(s.db)).toEqual(before);
+ }finally{s.close();}});
+it.each(['commit','replay'] as const)('penjaga pemetaan pada %s menggulung transaksi',async phase=>{const s=await setup();try{
+ await s.gateway.createStockGroup(s.identity,open,op('open',1));const input={skuId:'sku',groupId:'g'};if(phase==='replay')await s.gateway.registerSkuStockMapping(s.identity,input,op('map',2));const before=await checkpoint(s.db);
+ const original=s.permit.withAuthorizationLock.bind(s.permit);s.permit.withAuthorizationLock=fn=>original(read=>fn(async identity=>{const current=await read(identity);let count=0;return {...current,assertTime:()=>{if(++count===2)throw new Error('fault');return current.assertTime();}};}));expect(await s.gateway.registerSkuStockMapping(s.identity,input,op('map',2))).toEqual({status:'denied'});expect(await checkpoint(s.db)).toEqual(before);
+ }finally{s.close();}});
+it.each(['pin','policy','actor'] as const)('perubahan %s saat antre menolak registrasi pemetaan',async change=>{const s=await setup();try{
+ await s.gateway.createStockGroup(s.identity,open,op('open',1));const before=await checkpoint(s.db);let release!:()=>void,entered!:()=>void;const gate=new Promise<void>(r=>release=r),ready=new Promise<void>(r=>entered=r),read=s.permit.read.bind(s.permit);s.permit.read=async identity=>{const result=await read(identity);entered();await gate;return result;};
+ const pending=s.gateway.registerSkuStockMapping(s.identity,{skuId:'sku',groupId:'g'},op('map',2));await ready;if(change==='pin')await s.pin.lock();else {const policy={...s.policy,version:2,actors:change==='actor'?[{...s.policy.actors[0],active:false}]:s.policy.actors};const payload={...s.p,sequence:2,policyVersion:2,policyHash:await policyHash(policy)};await s.permit.install(await s.sign(payload),s.identity,policy);}release();expect(await pending).toEqual({status:'denied'});expect(await checkpoint(s.db)).toEqual(before);
+ }finally{s.close();}});
