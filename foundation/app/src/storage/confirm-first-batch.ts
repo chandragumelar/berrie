@@ -22,7 +22,7 @@ export interface ConfirmFirstBatchInput {
 }
 
 /** Internal only. Identity and policy metadata do not authorize this operation. */
-function saveFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput | DraftCashInput | DraftFreeInput | DraftNoncashInput, metadata:StockMetadata, mode:'confirm'|'cash'|'free'|'noncash', locks:LockProvider=navigator.locks, now:()=>string=()=>new Date().toISOString()):Promise<unknown> {
+function saveFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput | DraftCashInput | DraftFreeInput | DraftNoncashInput, metadata:StockMetadata, mode:'confirm'|'cash'|'free'|'noncash', locks:LockProvider=navigator.locks, now:()=>string=()=>new Date().toISOString(), guard?:()=>void):Promise<unknown> {
  const data=copyInput(input) as DraftCashInput & DraftFreeInput & DraftNoncashInput, meta=copyInput(metadata) as StockMetadata;
  const intent={data,metadata:meta};canonical(intent);
  if(!data || typeof data.orderId!=='string' || !data.orderId.trim() || !Number.isSafeInteger(data.expectedDraftRevision) || data.expectedDraftRevision<0 || !Array.isArray(data.mappings) || !Array.isArray(data.groups)) throw new Error('Intent batch tidak sah');
@@ -92,11 +92,11 @@ function saveFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput | DraftC
   const batchData=batchIntent(data);
   change.payload={...intent,data:batchData,contractVersion:2,sessionSource};
   return commit(combineDraftCashChange(change,payment,data));
- });
+ },guard);
 }
 
 /** Internal only; authorization is required before invoking this command. */
-export function confirmFirstBatch(db:BerrieDatabase,input:ConfirmFirstBatchInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> { return saveFirstBatch(db,input,metadata,'confirm',locks,now); }
+export function confirmFirstBatch(db:BerrieDatabase,input:ConfirmFirstBatchInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string,guard?:()=>void):Promise<unknown> { return saveFirstBatch(db,input,metadata,'confirm',locks,now,guard); }
 /** Confirms the entire stored draft and settles positive cash in one transaction. */
 export function payDraftCash(db:BerrieDatabase,input:DraftCashInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> { return saveFirstBatch(db,input,metadata,'cash',locks,now); }
 

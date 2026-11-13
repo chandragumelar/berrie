@@ -8,6 +8,7 @@ import { storedUnitBeforeSnapshot } from './permit-capability';
 import { checkpoint, type Snapshot } from './recovery';
 import { validateCheckpoint } from './validate-checkpoint';
 import { readDraft } from './drafts';
+import { confirmFirstBatch, type ConfirmFirstBatchInput } from './confirm-first-batch';
 import { cancelStoredDraft, readCancelledDraft, type CancelDraftInput } from './draft-cancellation';
 
 export interface DraftOperation {operationId:string;localSequence:number;recordedAt:string}
@@ -55,6 +56,18 @@ export class AuthorizedDrafts {
  }
  readDraft(i:PinIdentity,input:{id:string}) {return this.read(i,input,false);}
  readCancelledDraft(i:PinIdentity,input:{id:string}) {return this.read(i,input,true);}
+ confirmFirstBatch(identityInput:PinIdentity,input:ConfirmFirstBatchInput,operation:DraftOperation) {
+  try {const i=identity(identityInput),d=copyInput(input) as ConfirmFirstBatchInput,o=copyInput(operation) as DraftOperation;canonical({i,d,o});
+   if(!exact(d,['orderId','expectedDraftRevision','mappings','groups']) || !id(d.orderId) || !integer(d.expectedDraftRevision) || !Array.isArray(d.mappings) || !Array.isArray(d.groups) || !d.mappings.every(m=>exact(m,['skuId','groupId','revision']) && id(m.skuId) && id(m.groupId) && integer(m.revision)) || !d.groups.every(g=>exact(g,['groupId','balance','revision']) && id(g.groupId) && integer(g.balance) && integer(g.revision)) || new Set(d.mappings.map(m=>m.skuId)).size!==d.mappings.length || new Set(d.groups.map(g=>g.groupId)).size!==d.groups.length || !exact(o,['operationId','localSequence','recordedAt']) || !id(o.operationId) || !integer(o.localSequence,1) || typeof o.recordedAt!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(o.recordedAt) || !Number.isFinite(Date.parse(o.recordedAt))) throw new Error('Input tidak sah');
+   return this.execute(i,async ctx=>{const snap=validateCheckpoint(await checkpoint(this.db)),s=source(snap,ctx.storeId,d.orderId);
+    const count=snap.state.find(r=>r.key===`cash-count:${s.session.id}`)?.value as BusinessRecord|undefined;
+    if(count?.recordType==='cash-count' && ['save','revise','close'].includes(count.history.events.at(-1)?.action ?? '')) throw new Error('Sesi tidak tersedia');
+    const old=s.draft.items.every(item=>item.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry)));ctx.guard(old);
+    const result=await confirmFirstBatch(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,undefined,()=>ctx.guard(old)) as {orderId:string;batchNumber:1};
+    return {orderId:result.orderId,batchNumber:result.batchNumber};
+   });
+  } catch {return Promise.resolve({status:'denied'} as const);}
+ }
  cancelStoredDraft(identityInput:PinIdentity,input:CancelDraftInput,operation:DraftOperation) {
   try {const i=identity(identityInput),d=copyInput(input) as CancelDraftInput,o=copyInput(operation) as DraftOperation;canonical({i,d,o});
    if(!exact(d,['orderId','expectedRevision','reason']) || !id(d.orderId) || !integer(d.expectedRevision) || typeof d.reason!=='string' || !d.reason.trim() || d.reason.length>500 || !exact(o,['operationId','localSequence','recordedAt']) || !id(o.operationId) || !integer(o.localSequence,1) || typeof o.recordedAt!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(o.recordedAt) || !Number.isFinite(Date.parse(o.recordedAt))) throw new Error('Input tidak sah');
