@@ -11,6 +11,9 @@ import type { BusinessRecord } from '../domain/business-record';
 import { payConfirmedFirstBatchCash, type ConfirmedCashPaymentInput } from './confirmed-cash-payment';
 import { payConfirmedFirstBatchNoncash, type ConfirmedNoncashInput } from './noncash-payment';
 import { readPaymentMethods, setPaymentMethods, type PaymentMethodsInput } from './payment-methods';
+import { draftSource } from './authorized-drafts';
+import { payDraftCash } from './confirm-first-batch';
+import type { DraftCashInput } from './draft-cash-contract';
 import type { PaymentMethods } from '../domain/payment-methods';
 
 export interface PaymentOperation {operationId:string;localSequence:number;recordedAt:string}
@@ -18,6 +21,7 @@ const direct:LockProvider={request:async(_name,fn)=>fn()};
 const exact=(v:unknown,keys:string[])=>!!v && typeof v==='object' && !Array.isArray(v) && Object.keys(v).sort().join(',')===[...keys].sort().join(',');
 const id=(v:unknown):v is string=>typeof v==='string' && !!v.trim() && v.length<=200;
 const integer=(v:unknown,min=0):v is number=>typeof v==='number' && Number.isSafeInteger(v) && v>=min;
+const denseArray=(v:unknown):v is unknown[]=>Array.isArray(v) && Object.keys(v).length===v.length && Array.from({length:v.length},(_,i)=>Object.hasOwn(v,i)).every(Boolean);
 function identity(value:PinIdentity):PinIdentity {
  const i=copyInput(value) as PinIdentity;
  if(!exact(i,['storeId','deviceId','epoch','actorId']) || ![i.storeId,i.deviceId,i.actorId].every(id) || !integer(i.epoch,1)) throw new Error('Identitas tidak sah');
@@ -61,6 +65,22 @@ export class AuthorizedPayments {
     const meta={...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion};
     const result=await setPaymentMethods(this.db,d,meta,direct,()=>ctx.guard(false)) as {methods:PaymentMethods;revision:number};
     return {methods:result.methods,revision:result.revision};
+   });
+  } catch {return Promise.resolve({status:'denied'} as const);}
+ }
+ payDraftCash(identityInput:PinIdentity,input:DraftCashInput,operation:PaymentOperation) {
+  try {
+   if(!input || !denseArray(input.mappings) || !denseArray(input.groups)) throw new Error('Array tidak sah');
+   const i=identity(identityInput),d=copyInput(input) as DraftCashInput,o=copyInput(operation) as PaymentOperation;canonical({i,d,o});
+   if(!exact(d,['orderId','expectedDraftRevision','mappings','groups','expectedSessionRevision','received']) || !id(d.orderId) || !integer(d.expectedDraftRevision) || !integer(d.expectedSessionRevision) || !integer(d.received,1) || !Array.isArray(d.mappings) || !Array.isArray(d.groups) || !d.mappings.every(m=>exact(m,['skuId','groupId','revision']) && id(m.skuId) && id(m.groupId) && integer(m.revision)) || !d.groups.every(g=>exact(g,['groupId','balance','revision']) && id(g.groupId) && integer(g.balance) && integer(g.revision)) || new Set(d.mappings.map(m=>m.skuId)).size!==d.mappings.length || new Set(d.groups.map(g=>g.groupId)).size!==d.groups.length || !exact(o,['operationId','localSequence','recordedAt']) || !id(o.operationId) || !integer(o.localSequence,1) || typeof o.recordedAt!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(o.recordedAt) || (!Number.isFinite(Date.parse(o.recordedAt)) || new Date(o.recordedAt).toISOString()!==o.recordedAt.replace(/Z$/,o.recordedAt.includes('.')?'Z':'.000Z'))) throw new Error('Input tidak sah');
+   return this.execute(i,async ctx=>{
+    const snap=validateCheckpoint(await checkpoint(this.db)),s=draftSource(snap,ctx.storeId,d.orderId);
+    await requireOrderSession(this.db,ctx.storeId,s.session.id);
+    const count=snap.state.find(r=>r.key===`cash-count:${s.session.id}`)?.value as BusinessRecord|undefined;
+    if(count?.recordType==='cash-count' && ['save','revise','close'].includes(count.history.events.at(-1)?.action ?? '')) throw new Error('Sesi tidak tersedia');
+    const old=s.draft.items.every(item=>item.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry)));ctx.guard(old);
+    const result=await payDraftCash(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,undefined,()=>ctx.guard(old)) as {orderId:string;batchNumber:1;payment:unknown;settlement:unknown};
+    return {orderId:result.orderId,batchNumber:result.batchNumber,payment:result.payment,settlement:result.settlement};
    });
   } catch {return Promise.resolve({status:'denied'} as const);}
  }
