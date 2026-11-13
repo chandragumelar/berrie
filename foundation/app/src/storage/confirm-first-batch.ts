@@ -98,7 +98,7 @@ function saveFirstBatch(db:BerrieDatabase, input:ConfirmFirstBatchInput | DraftC
 /** Internal only; authorization is required before invoking this command. */
 export function confirmFirstBatch(db:BerrieDatabase,input:ConfirmFirstBatchInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string,guard?:()=>void):Promise<unknown> { return saveFirstBatch(db,input,metadata,'confirm',locks,now,guard); }
 /** Confirms the entire stored draft and settles positive cash in one transaction. */
-export function payDraftCash(db:BerrieDatabase,input:DraftCashInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> { return saveFirstBatch(db,input,metadata,'cash',locks,now); }
+export function payDraftCash(db:BerrieDatabase,input:DraftCashInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string,guard?:()=>void):Promise<unknown> { return saveFirstBatch(db,input,metadata,'cash',locks,now,guard); }
 
 /** Confirms the stored draft and settles exactly Rp0 atomically; owner approval is a T-04 prerequisite. */
 export function settleDraftFree(db:BerrieDatabase,input:DraftFreeInput,metadata:StockMetadata,locks?:LockProvider,now?:()=>string):Promise<unknown> { return saveFirstBatch(db,input,metadata,'free',locks,now); }
