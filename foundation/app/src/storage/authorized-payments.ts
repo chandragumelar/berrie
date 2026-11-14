@@ -16,6 +16,9 @@ import { payDraftCash, payDraftNoncash } from './confirm-first-batch';
 import type { DraftNoncashInput } from './noncash-payment';
 import type { DraftCashInput } from './draft-cash-contract';
 import type { PaymentMethods } from '../domain/payment-methods';
+import type { SettlementSnapshot } from '../domain/settlement';
+import type { PermissionMode } from '../domain/permission-policy';
+import { settleConfirmedFirstBatchFree, validateFreeReason, type ConfirmedFreeInput } from './free-settlement';
 
 export interface PaymentOperation {operationId:string;localSequence:number;recordedAt:string}
 const direct:LockProvider={request:async(_name,fn)=>fn()};
@@ -31,7 +34,7 @@ function identity(value:PinIdentity):PinIdentity {
 /** Internal authorization boundary; raw primitives are not gateways. */
 export class AuthorizedPayments {
  constructor(private db:BerrieDatabase,private pin:LocalPinSecurity,private permits:OfflinePermitStorage,private locks:LockProvider=navigator.locks) {}
- private async execute<T>(i:PinIdentity,work:(context:{storeId:string;actorId:string;deviceId:string;epoch:number;policyVersion:number;role:'owner'|'staff';expiry:number;guard:(old?:boolean)=>void})=>Promise<T>):Promise<{status:'denied'}|{status:'ok';value:T}> {
+ private async execute<T>(i:PinIdentity,work:(context:{storeId:string;actorId:string;deviceId:string;epoch:number;policyVersion:number;role:'owner'|'staff';freeMode:PermissionMode;expiry:number;guard:(old?:boolean)=>void})=>Promise<T>,guardedCommit=false):Promise<{status:'denied'}|{status:'ok';value:T}> {
   try {
    const captured=this.pin.captureIdentity(i);
    if(this.db.name!==this.pin.businessName || this.db.name!==this.permits.businessName || !this.locks || typeof this.locks.request!=='function') return {status:'denied'};
@@ -43,7 +46,8 @@ export class AuthorizedPayments {
     if(!actor || !actor.active || actor.role!==p.role || current.policy.version!==p.policyVersion) return {status:'denied'} as const;
     const expiry=permitExpiry(p);
     const guard=(old=true)=>{captured();pinGuard();const now=current.assertTime();if(now>=expiry && (actor.role!=='owner' || !old)) throw new Error('Permit kedaluwarsa');};
-    guard();const value=await work({storeId:p.storeId,actorId:p.actorId,deviceId:p.deviceId,epoch:p.epoch,policyVersion:current.policy.version,role:actor.role,expiry,guard});
+    guard();const value=await work({storeId:p.storeId,actorId:p.actorId,deviceId:p.deviceId,epoch:p.epoch,policyVersion:current.policy.version,role:actor.role,freeMode:current.policy.matrix['free-settlement'],expiry,guard});
+    if(guardedCommit) return {status:'ok',value} as const;
     const finalPin=await checkPin(i),finalPermit=await readPermit(i);
     if(finalPermit.clockFault || canonical(current.permit)!==canonical(finalPermit.permit) || canonical(current.policy)!==canonical(finalPermit.policy ?? null)) return {status:'denied'} as const;
     guard();finalPin();const now=finalPermit.assertTime();if(actor.role==='staff' && now>=expiry) return {status:'denied'} as const;
@@ -99,6 +103,27 @@ export class AuthorizedPayments {
     const result=await payDraftNoncash(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,undefined,()=>ctx.guard(old)) as {orderId:string;batchNumber:1;payment:unknown;settlement:unknown};
     return {orderId:result.orderId,batchNumber:result.batchNumber,payment:result.payment,settlement:result.settlement};
    });
+  } catch {return Promise.resolve({status:'denied'} as const);}
+ }
+ settleConfirmedFree(identityInput:PinIdentity,input:ConfirmedFreeInput,operation:PaymentOperation):Promise<{status:'ok';value:{orderId:string;settlement:SettlementSnapshot}}|{status:'approval-required'}|{status:'denied'}> {
+  try {
+   const i=identity(identityInput),d=copyInput(input) as ConfirmedFreeInput,o=copyInput(operation) as PaymentOperation;canonical({i,d,o});
+   if(!exact(d,['orderId','expectedBatchRevision','expectedSessionRevision','reason']) || !id(d.orderId) || !integer(d.expectedBatchRevision) || !integer(d.expectedSessionRevision) || !exact(o,['operationId','localSequence','recordedAt']) || !id(o.operationId) || !integer(o.localSequence,1) || typeof o.recordedAt!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(o.recordedAt) || !Number.isFinite(Date.parse(o.recordedAt)) || new Date(o.recordedAt).toISOString()!==o.recordedAt.replace(/Z$/,o.recordedAt.includes('.')?'Z':'.000Z')) throw new Error('Input tidak sah');
+   validateFreeReason(d.reason);
+   return this.execute(i,async ctx=>{
+    const snap=validateCheckpoint(await checkpoint(this.db));
+    const row=snap.state.find(r=>r.key===`first-batch:${d.orderId}`),record=row?.value as BusinessRecord|undefined;
+    if(!row || record?.recordType!=='first-batch' || record.batch.storeId!==ctx.storeId || record.batch.draft.orderId!==d.orderId) throw new Error('Batch tidak ditemukan');
+    const sessionId=record.batch.draft.cashSessionId;await requireOrderSession(this.db,ctx.storeId,sessionId);
+    const count=snap.state.find(r=>r.key===`cash-count:${sessionId}`)?.value as BusinessRecord|undefined;
+    if(count?.recordType==='cash-count' && ['save','revise','close'].includes(count.history.events.at(-1)?.action ?? '')) throw new Error('Sesi kas tidak tersedia');
+    const old=record.batch.draft.items.every(item=>item.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry)));
+    ctx.guard(old);
+    if(ctx.role==='staff' && ctx.freeMode!=='allow') {ctx.guard(old);return {decision:ctx.freeMode==='approval'?'approval-required':'denied'} as const;}
+    const meta={...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion};
+    const value=await settleConfirmedFirstBatchFree(this.db,d,meta,direct,()=>ctx.guard(old)) as {orderId:string;settlement:SettlementSnapshot};
+    return {decision:'ok',value} as const;
+   },true).then(result=>result.status==='denied'?result:result.value.decision==='ok'?{status:'ok' as const,value:result.value.value}:{status:result.value.decision});
   } catch {return Promise.resolve({status:'denied'} as const);}
  }
  payCash(identityInput:PinIdentity,input:ConfirmedCashPaymentInput,operation:PaymentOperation) {return this.pay(identityInput,input,operation,'cash');}
