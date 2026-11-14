@@ -40,7 +40,7 @@ export function draftFreeBatchPart(change:AtomicChange):AtomicChange {
  return {...change,kind:'batch.confirm-first',payload:{...p,data:freeBatchIntent(p.data)},state:change.state.filter(s=>s.key.startsWith('first-batch:') || s.key.startsWith('kitchen-job:') || s.key.startsWith('stock-group:')),ledger:change.ledger,audit:change.audit.slice(0,1),outbox:{id:`batch-outbox:${change.operationId}`,operationId:change.operationId,value:{orderId:change.targetId}},result:{orderId:change.targetId,batchNumber:1}};
 }
 /** Internal only. T-04 must authorize the actor, device, session and owner approval. */
-export function settleConfirmedFirstBatchFree(db:BerrieDatabase,input:ConfirmedFreeInput,metadata:StockMetadata,locks:LockProvider=navigator.locks):Promise<unknown> {
+export function settleConfirmedFirstBatchFree(db:BerrieDatabase,input:ConfirmedFreeInput,metadata:StockMetadata,locks:LockProvider=navigator.locks,beforeCommit?:()=>void):Promise<unknown> {
  const data=copyInput(input) as ConfirmedFreeInput,meta=copyInput(metadata) as StockMetadata,intent={data,metadata:meta};canonical(intent);
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
@@ -54,5 +54,5 @@ export function settleConfirmedFirstBatchFree(db:BerrieDatabase,input:ConfirmedF
   const sessionSource=await requireOrderSession(db,meta.storeId,record.batch.draft.cashSessionId);
   if(sessionSource.revision!==data.expectedSessionRevision) throw new Error('Revisi sesi berubah');
   return commit(makeConfirmedFreeChange(record.batch,data,meta,sessionSource));
- });
+ },beforeCommit);
 }
