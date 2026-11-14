@@ -12,13 +12,13 @@ import { payConfirmedFirstBatchCash, type ConfirmedCashPaymentInput } from './co
 import { payConfirmedFirstBatchNoncash, type ConfirmedNoncashInput } from './noncash-payment';
 import { readPaymentMethods, setPaymentMethods, type PaymentMethodsInput } from './payment-methods';
 import { draftSource } from './authorized-drafts';
-import { payDraftCash, payDraftNoncash } from './confirm-first-batch';
+import { payDraftCash, payDraftNoncash, settleDraftFree } from './confirm-first-batch';
 import type { DraftNoncashInput } from './noncash-payment';
 import type { DraftCashInput } from './draft-cash-contract';
 import type { PaymentMethods } from '../domain/payment-methods';
 import type { SettlementSnapshot } from '../domain/settlement';
 import type { PermissionMode } from '../domain/permission-policy';
-import { settleConfirmedFirstBatchFree, validateFreeReason, type ConfirmedFreeInput } from './free-settlement';
+import { settleConfirmedFirstBatchFree, validateFreeReason, type ConfirmedFreeInput, type DraftFreeInput } from './free-settlement';
 
 export interface PaymentOperation {operationId:string;localSequence:number;recordedAt:string}
 const direct:LockProvider={request:async(_name,fn)=>fn()};
@@ -87,6 +87,24 @@ export class AuthorizedPayments {
     const result=await payDraftCash(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,undefined,()=>ctx.guard(old)) as {orderId:string;batchNumber:1;payment:unknown;settlement:unknown};
     return {orderId:result.orderId,batchNumber:result.batchNumber,payment:result.payment,settlement:result.settlement};
    });
+  } catch {return Promise.resolve({status:'denied'} as const);}
+ }
+ settleDraftFree(identityInput:PinIdentity,input:DraftFreeInput,operation:PaymentOperation):Promise<{status:'ok';value:{orderId:string;batchNumber:1;settlement:SettlementSnapshot}}|{status:'approval-required'}|{status:'denied'}> {
+  try {
+   if(!input || !denseArray(input.mappings) || !denseArray(input.groups)) throw new Error('Array tidak sah');
+   const i=identity(identityInput),d=copyInput(input) as DraftFreeInput,o=copyInput(operation) as PaymentOperation;canonical({i,d,o});
+   if(!exact(d,['orderId','expectedDraftRevision','mappings','groups','expectedSessionRevision','reason']) || !id(d.orderId) || !integer(d.expectedDraftRevision) || !integer(d.expectedSessionRevision) || (typeof d.reason!=='string' || !d.reason.trim() || d.reason.length>500) || !Array.isArray(d.mappings) || !Array.isArray(d.groups) || !d.mappings.every(m=>exact(m,['skuId','groupId','revision']) && id(m.skuId) && id(m.groupId) && integer(m.revision)) || !d.groups.every(g=>exact(g,['groupId','balance','revision']) && id(g.groupId) && integer(g.balance) && integer(g.revision)) || new Set(d.mappings.map(m=>m.skuId)).size!==d.mappings.length || new Set(d.groups.map(g=>g.groupId)).size!==d.groups.length || !exact(o,['operationId','localSequence','recordedAt']) || !id(o.operationId) || !integer(o.localSequence,1) || typeof o.recordedAt!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(o.recordedAt) || (!Number.isFinite(Date.parse(o.recordedAt)) || new Date(o.recordedAt).toISOString()!==o.recordedAt.replace(/Z$/,o.recordedAt.includes('.')?'Z':'.000Z'))) throw new Error('Input tidak sah');
+   return this.execute(i,async ctx=>{
+    const snap=validateCheckpoint(await checkpoint(this.db)),s=draftSource(snap,ctx.storeId,d.orderId);
+    const session=await requireOrderSession(this.db,ctx.storeId,s.session.id);
+    if(session.revision!==d.expectedSessionRevision) throw new Error('Revisi sesi tidak sesuai');
+    const count=snap.state.find(r=>r.key===`cash-count:${s.session.id}`)?.value as BusinessRecord|undefined;
+    if(count?.recordType==='cash-count' && ['save','revise','close'].includes(count.history.events.at(-1)?.action ?? '')) throw new Error('Sesi tidak tersedia');
+    const old=s.draft.items.every(item=>item.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry)));ctx.guard(old);
+    if(ctx.role==='staff' && ctx.freeMode!=='allow') {ctx.guard(old);return {decision:ctx.freeMode==='approval'?'approval-required':'denied'} as const;}
+    const result=await settleDraftFree(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,undefined,()=>ctx.guard(old)) as {orderId:string;batchNumber:1;settlement:SettlementSnapshot};
+    return {decision:'ok',value:{orderId:result.orderId,batchNumber:result.batchNumber,settlement:result.settlement}} as const;
+   },true).then(result=>result.status==='denied'?result:result.value.decision==='ok'?{status:'ok' as const,value:result.value.value}:{status:result.value.decision});
   } catch {return Promise.resolve({status:'denied'} as const);}
  }
  payDraftNoncash(identityInput:PinIdentity,input:DraftNoncashInput,operation:PaymentOperation) {
