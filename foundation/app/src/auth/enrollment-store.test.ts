@@ -27,3 +27,15 @@ describe('access enrollment persistence',()=>{
   store.close();
  });
 });
+
+it('replaces only the expired operation and retains the new retry intent',async()=>{
+ const store=new EnrollmentStore(`test-access-${crypto.randomUUID()}`), row=await store.getOrCreate(owner);
+ const original:AccessIntent={action:'activate',operationId:crypto.randomUUID(),deviceId:row.deviceId,storeName:'Toko',timeZone:'Asia/Jakarta'};
+ await store.begin(owner,original);
+ const next:AccessIntent={action:'refresh',operationId:crypto.randomUUID(),deviceId:row.deviceId,storeId:crypto.randomUUID()};
+ await expect(store.replaceExpired(owner,crypto.randomUUID(),next)).rejects.toThrow();
+ await store.replaceExpired(owner,original.operationId,next);
+ expect((await store.get(owner))?.pending).toEqual(next);
+ expect(await store.begin(owner,next)).toEqual(next);
+ store.close();
+});

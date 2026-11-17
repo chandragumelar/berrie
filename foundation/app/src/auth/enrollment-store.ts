@@ -63,6 +63,15 @@ export class EnrollmentStore {
    await this.db.enrollments.put({...row,pending:intent}); return intent;
   });
  }
+ /** Replace only the exact operation the server reported as expired. */
+ async replaceExpired(ownerUserId:string,expiredOperationId:string,next:AccessIntent):Promise<void> {
+  await this.db.transaction('rw',this.db.enrollments,async()=>{
+   const row=await this.db.enrollments.get(ownerUserId);
+   if(!row?.pending || row.pending.operationId!==expiredOperationId || next.action!=='refresh') throw new Error('Operasi akses berubah');
+   validateIntent(next,row.deviceId);
+   await this.db.enrollments.put({...row,pending:next});
+  });
+ }
  /** Call only after parsing and cryptographically verifying the response. */
  async saveGrant(ownerUserId:string,operationId:string,grant:AccessGrant):Promise<void> {
   await this.db.transaction('rw',this.db.enrollments,async()=>{

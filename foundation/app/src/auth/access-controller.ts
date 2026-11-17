@@ -11,9 +11,9 @@ import { EnrollmentStore, type Enrollment, type AccessIntent } from './enrollmen
 import type { PermitKeys } from '../domain/offline-permit';
 
 export type AccessScreen='config-error'|'signed-out'|'verify-email'|'store-setup'|'activating'|'pin-setup'|'locked'|'unlocked'|'limited'|'device-conflict'|'blocked';
-export interface AccessState { screen:AccessScreen; error:string|null; busy:boolean; grant:AccessGrant|null; decision:PermitDecision|null; email:string }
+export interface AccessState { screen:AccessScreen; error:string|null; busy:boolean; grant:AccessGrant|null; decision:PermitDecision|null; email:string; canRenew:boolean }
 export class AccessController {
- state:AccessState={screen:'signed-out',error:null,busy:false,grant:null,decision:null,email:''};
+ state:AccessState={screen:'signed-out',error:null,busy:false,grant:null,decision:null,email:'',canRenew:false};
  private owner:string|null=null; private row:Enrollment|null=null; private security:LocalPinSecurity|null=null; private permits:OfflinePermitStorage|null=null; private business:BerrieDatabase|null=null; private stopActivity:(()=>void)|null=null; private monitor:number|null=null;
  constructor(private client:SupabaseClient,private api:AccessApi,private keys:PermitKeys,private enrollments:EnrollmentStore,private notify:(s:AccessState)=>void) {}
  private set(change:Partial<AccessState>):void { this.state={...this.state,...change}; this.notify(this.state); }
@@ -88,10 +88,27 @@ export class AccessController {
   } catch(e) { await this.handleError(e); } finally { this.set({busy:false}); }
  }
  private async handleError(e:unknown):Promise<void> {
+  if(e instanceof AccessApiError && e.code==='grant_expired') { this.set({error:'Izin sebelumnya kedaluwarsa. Verifikasi online untuk meminta izin baru.',canRenew:true}); return; }
   if(e instanceof AccessApiError && ['forbidden','device_conflict'].includes(e.code) && this.owner && this.row) {
    await this.security?.lock(); await this.enrollments.setAccessState(this.owner,{blockedReason:e.code}); this.set({screen:e.code==='device_conflict'?'device-conflict':'blocked',error:'Perangkat tidak lagi diizinkan.'});return;
   }
   this.set({error:e instanceof AccessApiError && e.code==='network_error'?'Jaringan tidak tersedia. Coba lagi.':e instanceof Error?e.message:'Operasi gagal. Coba lagi.'});
+ }
+ async renewExpired():Promise<void> {
+  if(!this.owner || !this.row?.pending) return;
+  this.set({busy:true,error:null});
+  try {
+   const bootstrap=await this.api.bootstrap(this.row.deviceId,this.row.bindingSecret);
+   if(bootstrap.ownerId!==this.owner || !bootstrap.emailVerified || bootstrap.activation!=='this-device' || !bootstrap.store) throw new AccessApiError('forbidden',403);
+   const intent:AccessIntent={action:'refresh',operationId:crypto.randomUUID(),deviceId:this.row.deviceId,storeId:bootstrap.store.id};
+   await this.enrollments.replaceExpired(this.owner,this.row.pending.operationId,intent);
+   this.set({screen:'activating',canRenew:false});
+   this.row=(await this.enrollments.get(this.owner))!;
+   const grant=await this.api.grant(intent,this.row.bindingSecret,this.owner);
+   await this.enrollments.saveGrant(this.owner,intent.operationId,grant); this.row=(await this.enrollments.get(this.owner))!;
+   await this.openGrant(this.row); await this.installGrant(grant);
+   this.set({screen:await this.security!.hasVerifier(grant.identity)?'locked':'pin-setup',canRenew:false});
+  } catch(e) { await this.handleError(e); } finally { this.set({busy:false}); }
  }
  async setupPin(pin:string,confirm:string):Promise<void> {
   if(!this.security || !this.state.grant || !this.owner || !validPin(pin) || pin!==confirm) { this.set({error:'PIN harus enam digit dan konfirmasi harus sama.'}); return; }
@@ -134,6 +151,17 @@ export class AccessController {
   if(this.owner && this.row) await this.enrollments.setAccessState(this.owner,{explicitSignedOut:true});
   this.disposeSecurity();this.row=null;this.owner=null;this.set({screen:'signed-out',grant:null,decision:null,error:null});
   const {error}=await this.client.auth.signOut({scope:'local'}); if(error) this.set({error:'Keluar lokal berhasil; server tidak dapat dihubungi.'});
+ }
+ async checkVerification():Promise<void> {
+  this.set({busy:true,error:null});
+  try {
+   const session=await this.client.auth.getSession();
+   if(!session.data.session) { this.set({screen:'signed-out',error:'Masuk kembali setelah memverifikasi email.'});return; }
+   const {data,error}=await this.client.auth.getUser();
+   if(error || !data.user) throw new Error('Tidak dapat memeriksa email. Pastikan jaringan tersedia dan coba lagi.');
+   this.owner=data.user.id; await this.onlineBootstrap();
+   if(this.state.screen==='verify-email') this.set({error:'Email belum terverifikasi.'});
+  } catch(e) { await this.handleError(e); } finally { this.set({busy:false}); }
  }
  async resend():Promise<void> { const {error}=await this.client.auth.resend({type:'signup',email:this.state.email}); this.set({error:error?error.message:'Email verifikasi dikirim. Periksa kotak masuk.'}); }
 }
