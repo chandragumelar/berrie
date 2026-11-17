@@ -49,7 +49,7 @@ function save(db:BerrieDatabase,input:ServingInput,metadata:StockMetadata,action
  },beforeCommit);
 }
 export function serveUnits(db:BerrieDatabase,data:ServingInput,metadata:StockMetadata,locks?:LockProvider,beforeCommit?:()=>void):Promise<unknown> {return save(db,data,metadata,'serve',locks,beforeCommit);}
-export function correctServing(db:BerrieDatabase,data:ServingInput,metadata:StockMetadata,locks?:LockProvider):Promise<unknown> {return save(db,data,metadata,'correct',locks);}
+export function correctServing(db:BerrieDatabase,data:ServingInput,metadata:StockMetadata,locks?:LockProvider,beforeCommit?:()=>void):Promise<unknown> {return save(db,data,metadata,'correct',locks,beforeCommit);}
 export async function readServing(db:BerrieDatabase,storeId:string,orderId:string):Promise<{serving:ServingState;revision:number|null}> {
  return db.transaction('r',db.state,async()=>{
   const batchRow=await db.state.get(`first-batch:${orderId}`);validateBusinessRecord(batchRow?.value);const batch=batchRow?.value as BusinessRecord;
