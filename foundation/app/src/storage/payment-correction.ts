@@ -23,7 +23,7 @@ export function makePaymentCorrectionChange(payment:Payment, session:CashSession
  return {operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:'payment.correct-method',targetId:payment.orderId,payload:{data,metadata:meta,contractVersion:1,paymentSource:{id:payment.id,revision:0},sessionSource:{id:session.id,revision:data.expectedSessionRevision}},state:[{key:correctionKey(payment.orderId),expectedRevision:data.expectedRevision,value:{recordType:'payment-corrections',schemaVersion:1,corrections:[...history,correction]}},{key:`cash-session:${session.id}`,expectedRevision:data.expectedSessionRevision,value:{recordType:'cash-session',schemaVersion:1,session}}],ledger:[{id:`correction-ledger:${operationId}`,operationId,value:{kind:'method-correction',sessionId:session.id,storeId:session.storeId,correction,legs}}],audit:[{id:`correction-audit:${operationId}`,operationId,value:{correction,actorId:meta.actorId,policyVersion:meta.policyVersion,before,after:balance}}],outbox:{id:`correction-outbox:${operationId}`,operationId,value:{orderId:payment.orderId,paymentId:payment.id}},result:{correction,revision:history.length,balance,sessionRevision:data.expectedSessionRevision+1}};
 }
 /** Internal only; T-04 must authorize actor, device, session and owner approval. */
-export function correctPaymentMethod(db:BerrieDatabase,input:CorrectPaymentMethodInput,metadata:StockMetadata,locks:LockProvider=navigator.locks):Promise<unknown> {
+export function correctPaymentMethod(db:BerrieDatabase,input:CorrectPaymentMethodInput,metadata:StockMetadata,locks:LockProvider=navigator.locks,beforeCommit?:()=>void):Promise<unknown> {
  const data=copyInput(input) as CorrectPaymentMethodInput,meta=copyInput(metadata) as StockMetadata,intent={data,metadata:meta};canonical(intent);
  return withWriterTransaction(db,locks,async commit=>{
   const prior=await db.receipts.get(meta.operationId);
@@ -39,7 +39,7 @@ export function correctPaymentMethod(db:BerrieDatabase,input:CorrectPaymentMetho
   const history=h?.recordType==='payment-corrections'?h.corrections:[];
   const before=cashBalance(cashMovements(snapshot.receipts.map(r=>JSON.parse(r.payload) as AtomicChange),sessionRecord.session.id),sessionRecord.session);
   return commit(makePaymentCorrectionChange(record.payment,sessionRecord.session,history,data,meta,before));
- });
+ },beforeCommit);
 }
 /** Internal only; access must also pass T-04. */
 export async function readEffectivePayment(db:BerrieDatabase,storeId:string,orderId:string):Promise<{payment:Payment; method:PaymentMethod; corrections:MethodCorrection[]; revision:number|null}> {

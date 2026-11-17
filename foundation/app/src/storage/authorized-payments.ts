@@ -1,5 +1,7 @@
 import { permitExpiry } from '../domain/offline-permit';
-import { canonical, copyInput, type LockProvider } from './commit';
+import { canonical, copyInput, type AtomicChange, type LockProvider } from './commit';
+import { correctPaymentMethod as correctMethod, type CorrectPaymentMethodInput } from './payment-correction';
+import type { PaymentMethod } from '../domain/payment';
 import type { BerrieDatabase } from './database';
 import type { LocalPinSecurity, PinIdentity } from './local-pin';
 import type { OfflinePermitStorage } from './offline-permit';
@@ -34,7 +36,7 @@ function identity(value:PinIdentity):PinIdentity {
 /** Internal authorization boundary; raw primitives are not gateways. */
 export class AuthorizedPayments {
  constructor(private db:BerrieDatabase,private pin:LocalPinSecurity,private permits:OfflinePermitStorage,private locks:LockProvider=navigator.locks) {}
- private async execute<T>(i:PinIdentity,work:(context:{storeId:string;actorId:string;deviceId:string;epoch:number;policyVersion:number;role:'owner'|'staff';freeMode:PermissionMode;expiry:number;guard:(old?:boolean)=>void})=>Promise<T>,guardedCommit=false):Promise<{status:'denied'}|{status:'ok';value:T}> {
+ private async execute<T>(i:PinIdentity,work:(context:{storeId:string;actorId:string;deviceId:string;epoch:number;policyVersion:number;role:'owner'|'staff';freeMode:PermissionMode;correctionMode:PermissionMode;expiry:number;guard:(old?:boolean)=>void})=>Promise<T>,guardedCommit=false):Promise<{status:'denied'}|{status:'ok';value:T}> {
   try {
    const captured=this.pin.captureIdentity(i);
    if(this.db.name!==this.pin.businessName || this.db.name!==this.permits.businessName || !this.locks || typeof this.locks.request!=='function') return {status:'denied'};
@@ -46,7 +48,7 @@ export class AuthorizedPayments {
     if(!actor || !actor.active || actor.role!==p.role || current.policy.version!==p.policyVersion) return {status:'denied'} as const;
     const expiry=permitExpiry(p);
     const guard=(old=true)=>{captured();pinGuard();const now=current.assertTime();if(now>=expiry && (actor.role!=='owner' || !old)) throw new Error('Permit kedaluwarsa');};
-    guard();const value=await work({storeId:p.storeId,actorId:p.actorId,deviceId:p.deviceId,epoch:p.epoch,policyVersion:current.policy.version,role:actor.role,freeMode:current.policy.matrix['free-settlement'],expiry,guard});
+    guard();const value=await work({storeId:p.storeId,actorId:p.actorId,deviceId:p.deviceId,epoch:p.epoch,policyVersion:current.policy.version,role:actor.role,freeMode:current.policy.matrix['free-settlement'],correctionMode:current.policy.matrix['payment-correction'],expiry,guard});
     if(guardedCommit) return {status:'ok',value} as const;
     const finalPin=await checkPin(i),finalPermit=await readPermit(i);
     if(finalPermit.clockFault || canonical(current.permit)!==canonical(finalPermit.permit) || canonical(current.policy)!==canonical(finalPermit.policy ?? null)) return {status:'denied'} as const;
@@ -141,6 +143,27 @@ export class AuthorizedPayments {
     const meta={...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion};
     const value=await settleConfirmedFirstBatchFree(this.db,d,meta,direct,()=>ctx.guard(old)) as {orderId:string;settlement:SettlementSnapshot};
     return {decision:'ok',value} as const;
+   },true).then(result=>result.status==='denied'?result:result.value.decision==='ok'?{status:'ok' as const,value:result.value.value}:{status:result.value.decision});
+  } catch {return Promise.resolve({status:'denied'} as const);}
+ }
+ correctPaymentMethod(identityInput:PinIdentity,input:CorrectPaymentMethodInput,operation:PaymentOperation):Promise<{status:'ok';value:{orderId:string;revision:number;sessionRevision:number;method:PaymentMethod}}|{status:'approval-required'}|{status:'denied'}> {
+  try {
+   const i=identity(identityInput),d=copyInput(input) as CorrectPaymentMethodInput,o=copyInput(operation) as PaymentOperation;canonical({i,d,o});
+   if(!exact(d,['orderId','expectedRevision','expectedSessionRevision','method','reason']) || !id(d.orderId) || (d.expectedRevision!==null && (!integer(d.expectedRevision) || d.expectedRevision===Number.MAX_SAFE_INTEGER)) || !integer(d.expectedSessionRevision) || d.expectedSessionRevision===Number.MAX_SAFE_INTEGER || !['cash','qris','transfer','ewallet'].includes(d.method) || typeof d.reason!=='string' || !d.reason.trim() || d.reason.length>500 || !exact(o,['operationId','localSequence','recordedAt']) || !id(o.operationId) || !integer(o.localSequence,1) || typeof o.recordedAt!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(o.recordedAt) || !Number.isFinite(Date.parse(o.recordedAt)) || new Date(o.recordedAt).toISOString()!==o.recordedAt.replace(/Z$/,o.recordedAt.includes('.')?'Z':'.000Z')) throw new Error('Input tidak sah');
+   return this.execute(i,async ctx=>{
+    const snap=validateCheckpoint(await checkpoint(this.db));
+    const paymentRow=snap.state.find(r=>r.key===`payment:${d.orderId}`),payment=paymentRow?.value as BusinessRecord|undefined;
+    const batchRow=snap.state.find(r=>r.key===`first-batch:${d.orderId}`),batch=batchRow?.value as BusinessRecord|undefined;
+    if(!paymentRow || paymentRow.revision!==0 || payment?.recordType!=='payment' || payment.payment.orderId!==d.orderId || payment.payment.storeId!==ctx.storeId || payment.payment.amount<=0 || !batchRow || batchRow.revision!==0 || batch?.recordType!=='first-batch' || batch.batch.storeId!==ctx.storeId || batch.batch.draft.orderId!==d.orderId || batch.batch.draft.cashSessionId!==payment.payment.cashSessionId) throw new Error('Sumber tidak sah');
+    const source=snap.receipts.map(r=>JSON.parse(r.payload) as AtomicChange).find(c=>c.state.some(x=>x.key===`payment:${d.orderId}` && x.expectedRevision===null));
+    if(!source || !['payment.draft-cash','payment.confirmed-cash','payment.draft-noncash','payment.confirmed-noncash'].includes(source.kind)) throw new Error('Jenis sumber tidak didukung');
+    const sessionId=payment.payment.cashSessionId;await requireOrderSession(this.db,ctx.storeId,sessionId);
+    const count=snap.state.find(r=>r.key===`cash-count:${sessionId}`)?.value as BusinessRecord|undefined;
+    if(count?.recordType==='cash-count' && ['save','revise','close'].includes(count.history.events.at(-1)?.action ?? '')) throw new Error('Sesi tidak tersedia');
+    const old=batch.batch.draft.items.every(item=>item.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry)));ctx.guard(old);
+    if(ctx.role==='staff' && ctx.correctionMode!=='allow') {ctx.guard(old);return {decision:ctx.correctionMode==='approval'?'approval-required':'denied'} as const;}
+    const result=await correctMethod(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,()=>ctx.guard(old)) as {correction:{to:PaymentMethod};revision:number;sessionRevision:number};
+    return {decision:'ok',value:{orderId:d.orderId,revision:result.revision,sessionRevision:result.sessionRevision,method:result.correction.to}} as const;
    },true).then(result=>result.status==='denied'?result:result.value.decision==='ok'?{status:'ok' as const,value:result.value.value}:{status:result.value.decision});
   } catch {return Promise.resolve({status:'denied'} as const);}
  }
