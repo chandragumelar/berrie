@@ -6,6 +6,7 @@ import { BerrieDatabase } from '../storage/database';
 import { evaluatePermit, type PermitDecision } from '../storage/permit-capability';
 import { PinActivity, observePinActivity } from '../storage/local-pin-activity';
 import { AccessApi, AccessApiError } from './access-api';
+import { clearLocalAuthSession } from './supabase-client';
 import { parseAccessGrant, type AccessGrant } from './contracts';
 import { EnrollmentStore, type Enrollment, type AccessIntent } from './enrollment-store';
 import type { PermitKeys } from '../domain/offline-permit';
@@ -41,7 +42,10 @@ export class AccessController {
    if(!row && !id) { const rows=await this.enrollments.resumable(); if(rows.length===1) row=rows[0]; }
    if(row && !row.explicitSignedOut && !row.blockedReason && row.grant) {
     const grant=await this.openGrant(row);
-    if(row.stage==='grant-received') await this.installGrant(grant);
+    if(row.stage==='grant-received') {
+     try { await this.installGrant(grant); }
+     catch { this.set({screen:'activating',error:'Izin belum tersimpan. Coba lagi.'});return; }
+    }
     const has=await this.security!.hasVerifier(grant.identity);
     this.set({screen:has?'locked':'pin-setup'});return;
    }
@@ -62,8 +66,10 @@ export class AccessController {
  }
  async onlineBootstrap():Promise<void> {
   if(!this.owner) { this.set({screen:'signed-out'});return; }
-  const existing=await this.enrollments.get(this.owner);
-  const result=await this.api.bootstrap(existing?.deviceId ?? null,existing?.bindingSecret);
+  const existing=await this.enrollments.get(this.owner);this.row=existing ?? null;
+  let result;
+  try { result=await this.api.bootstrap(existing?.deviceId ?? null,existing?.bindingSecret); }
+  catch(e) { if(e instanceof AccessApiError && ['forbidden','device_conflict'].includes(e.code) && existing) { await this.handleError(e);return; } throw e; }
   if(result.ownerId!==this.owner) throw new Error('Identitas akun tidak cocok');
   if(!result.emailVerified) { this.set({screen:'verify-email'}); return; }
   if(result.activation==='other-device') { if(existing) await this.enrollments.setAccessState(this.owner,{blockedReason:'device_conflict'}); this.set({screen:'device-conflict'});return; }
@@ -79,6 +85,10 @@ export class AccessController {
   if(!this.owner || !this.row) return;
   this.set({screen:'activating',busy:true,error:null});
   try {
+   if(this.row.stage==='grant-received' && this.row.grant) {
+    const grant=await this.openGrant(this.row);await this.installGrant(grant);
+    this.set({screen:await this.security!.hasVerifier(grant.identity)?'locked':'pin-setup'});return;
+   }
    const intent:AccessIntent=this.row.pending ?? {action:'activate',operationId:crypto.randomUUID(),deviceId:this.row.deviceId,storeName:name.trim(),timeZone};
    await this.enrollments.begin(this.owner,intent); this.row=(await this.enrollments.get(this.owner))!;
    const grant=await this.api.grant(intent,this.row.bindingSecret,this.owner);
@@ -119,6 +129,7 @@ export class AccessController {
  }
  async unlock(pin:string):Promise<void> {
   if(!this.security || !this.permits || !this.business || !this.state.grant || !this.owner || !this.row || this.row.explicitSignedOut || this.row.blockedReason) return;
+  this.set({busy:true,error:null});
   try {
    const result=await this.security.unlock(this.state.grant.identity,pin);
    if(result!=='unlocked') { this.set({error:result==='incorrect'?'PIN salah.':result==='cooldown'?'Terlalu banyak percobaan. Tunggu sebelum mencoba lagi.':'Perlu verifikasi online.'});return; }
@@ -129,7 +140,7 @@ export class AccessController {
    this.stopActivity?.(); this.stopActivity=observePinActivity(new PinActivity(this.security));
    if(this.monitor!==null) window.clearInterval(this.monitor);
    this.monitor=window.setInterval(()=>{void this.security?.check(true).then(ok=>{if(!ok) this.set({screen:'locked',decision:null});}).catch(()=>this.set({screen:'locked',decision:null}));},1000);
-  } catch { await this.security.lock(); this.set({screen:'locked',error:'Izin atau PIN tidak dapat diperiksa.'}); }
+  } catch { await this.security.lock(); this.set({screen:'locked',error:'Izin atau PIN tidak dapat diperiksa.'}); } finally { this.set({busy:false}); }
  }
  async refresh():Promise<void> {
   if(!this.owner || !this.row || !this.state.grant || !this.security || !await this.security.checkIdentity(this.state.grant.identity)) return;
@@ -150,7 +161,9 @@ export class AccessController {
   await this.security?.lock();
   if(this.owner && this.row) await this.enrollments.setAccessState(this.owner,{explicitSignedOut:true});
   this.disposeSecurity();this.row=null;this.owner=null;this.set({screen:'signed-out',grant:null,decision:null,error:null});
-  const {error}=await this.client.auth.signOut({scope:'local'}); if(error) this.set({error:'Keluar lokal berhasil; server tidak dapat dihubungi.'});
+  try { const {error}=await this.client.auth.signOut({scope:'local'}); if(error) this.set({error:'Keluar lokal berhasil; server tidak dapat dihubungi.'}); }
+  catch { this.set({error:'Keluar lokal berhasil; server tidak dapat dihubungi.'}); }
+  finally { clearLocalAuthSession(); }
  }
  async checkVerification():Promise<void> {
   this.set({busy:true,error:null});
