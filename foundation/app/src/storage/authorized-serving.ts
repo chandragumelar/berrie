@@ -4,7 +4,7 @@ import type { BerrieDatabase } from './database';
 import type { LocalPinSecurity, PinIdentity } from './local-pin';
 import type { OfflinePermitStorage } from './offline-permit';
 import { storedUnitBeforeSnapshot } from './permit-capability';
-import { readServing, serveUnits, type ServingInput } from './serving';
+import { readServing, serveUnits, correctServing, type ServingInput } from './serving';
 import { readOrderOperationalStatus } from './order-status';
 import { checkpoint } from './recovery';
 import { validateCheckpoint } from './validate-checkpoint';
@@ -25,7 +25,7 @@ function identity(value:PinIdentity):PinIdentity {
 /** Internal authorization boundary. Raw storage primitives are not alternate gateways. */
 export class AuthorizedServing {
  constructor(private db:BerrieDatabase,private pin:LocalPinSecurity,private permits:OfflinePermitStorage,private locks:LockProvider=navigator.locks) {}
- private async execute<T>(i:PinIdentity,work:(context:{storeId:string;actorId:string;deviceId:string;epoch:number;policyVersion:number;role:'owner'|'staff';expiry:number;guard:(old?:boolean)=>void})=>Promise<T>):Promise<{status:'denied'}|{status:'ok';value:T}> {
+ private async execute<T>(i:PinIdentity,work:(context:{storeId:string;actorId:string;deviceId:string;epoch:number;policyVersion:number;role:'owner'|'staff';correctionMode:'allow'|'approval'|'owner-only';expiry:number;guard:(old?:boolean)=>void})=>Promise<T>):Promise<{status:'denied'}|{status:'ok';value:T}> {
   try {
    const captured=this.pin.captureIdentity(i);
    if(this.db.name!==this.pin.businessName || this.db.name!==this.permits.businessName || !this.locks || typeof this.locks.request!=='function') return {status:'denied'};
@@ -37,7 +37,7 @@ export class AuthorizedServing {
     if(!actor || !actor.active || actor.role!==p.role || current.policy.version!==p.policyVersion) return {status:'denied'} as const;
     const expiry=permitExpiry(p);
     const guard=(old=true)=>{captured();pinGuard();const now=current.assertTime();if(now>=expiry && (actor.role!=='owner' || !old)) throw new Error('Permit kedaluwarsa');};
-    guard();const value=await work({storeId:p.storeId,actorId:p.actorId,deviceId:p.deviceId,epoch:p.epoch,policyVersion:current.policy.version,role:actor.role,expiry,guard});
+    guard();const value=await work({storeId:p.storeId,actorId:p.actorId,deviceId:p.deviceId,epoch:p.epoch,policyVersion:current.policy.version,role:actor.role,correctionMode:current.policy.matrix['cancel-confirmed'],expiry,guard});
     const finalPin=await checkPin(i),finalPermit=await readPermit(i);
     if(finalPermit.clockFault || canonical(current.permit)!==canonical(finalPermit.permit) || canonical(current.policy)!==canonical(finalPermit.policy ?? null)) return {status:'denied'} as const;
     guard();finalPin();const now=finalPermit.assertTime();if(actor.role==='staff' && now>=expiry) return {status:'denied'} as const;
@@ -79,4 +79,25 @@ export class AuthorizedServing {
    });
   } catch {return Promise.resolve({status:'denied'} as const);}
  }
+ correctServing(identityInput:PinIdentity,input:ServingInput,operation:ServingOperation) {
+  try {
+   if(!input || !Array.isArray(input.unitIds) || Object.keys(input.unitIds).length!==input.unitIds.length || !Array.from({length:input.unitIds.length},(_,index)=>Object.hasOwn(input.unitIds,index)).every(Boolean)) throw new Error('Array tidak sah');
+   const i=identity(identityInput),d=copyInput(input) as ServingInput,o=copyInput(operation) as ServingOperation;canonical({i,d,o});
+   if(!exact(d,['orderId','expectedRevision','unitIds','reason']) || !id(d.orderId) || !(d.expectedRevision===null || integer(d.expectedRevision)) || !d.unitIds.length || !d.unitIds.every(id) || new Set(d.unitIds).size!==d.unitIds.length || typeof d.reason!=='string' || !d.reason.trim() || d.reason.length>500 || !exact(o,['operationId','localSequence','recordedAt']) || !id(o.operationId) || !integer(o.localSequence,1) || typeof o.recordedAt!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(o.recordedAt) || !Number.isFinite(Date.parse(o.recordedAt)) || new Date(o.recordedAt).toISOString()!==o.recordedAt.replace(/Z$/,o.recordedAt.includes('.')?'Z':'.000Z')) throw new Error('Input tidak sah');
+   return this.execute(i,async ctx=>{
+    const snap=validateCheckpoint(await checkpoint(this.db));
+    const row=snap.state.find(r=>r.key===`first-batch:${d.orderId}`),record=row?.value as BusinessRecord|undefined;
+    if(!row || record?.recordType!=='first-batch' || record.batch.storeId!==ctx.storeId) throw new Error('Batch tidak ditemukan');
+    const sessionId=record.batch.draft.cashSessionId;
+    await requireOrderSession(this.db,ctx.storeId,sessionId);
+    const count=snap.state.find(r=>r.key===`cash-count:${sessionId}`)?.value as BusinessRecord|undefined;
+    if(count?.recordType==='cash-count' && ['save','revise','close'].includes(count.history.events.at(-1)?.action ?? '')) throw new Error('Sesi kas tidak tersedia');
+    const old=d.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry));ctx.guard(old);
+    if(ctx.role==='staff' && ctx.correctionMode!=='allow') return {decision:ctx.correctionMode==='approval'?'approval-required':'denied'} as const;
+    const result=await correctServing(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,()=>ctx.guard(old)) as {orderId:string;revision:number};
+    return {decision:'ok',value:{orderId:result.orderId,revision:result.revision}} as const;
+   }).then(result=>result.status==='denied'?result:result.value.decision==='ok'?{status:'ok' as const,value:result.value.value}:{status:result.value.decision});
+  } catch {return Promise.resolve({status:'denied'} as const);}
+ }
+
 }
