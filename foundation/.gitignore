@@ -7,3 +7,9 @@ app/*.tsbuildinfo
 app/test-results/
 app/playwright-report/
 review-sites/berrie-kasir-d48-build.tar.gz
+# Local access configuration contains server credentials and development signing keys.
+supabase/.temp/
+supabase/.env.local
+app/.env.local
+supabase/permit-public.local.json
+node_modules/

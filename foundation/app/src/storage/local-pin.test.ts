@@ -35,3 +35,14 @@ describe('persistent local security',()=>{
  it('cannot shorten cooldown by changing the wall clock while closed',async()=>{const {a,b,set,advance}=await setup();for(let i=0;i<5;i++) await a.unlock(identity,'000000');a.close();set(50_000_000);expect(await b.unlock(identity,'123456')).toBe('cooldown');advance(30_000);expect(await b.unlock(identity,'123456')).toBe('unlocked');b.close();});
  it('fails closed when the security transaction fails',async()=>{const {a}=await setup(); const original=IDBObjectStore.prototype.put; IDBObjectStore.prototype.put=function(){throw new Error('write failure')}; try { await expect(a.unlock(identity,'123456')).rejects.toThrow(); expect(await a.check(true)).toBe(false); } finally { IDBObjectStore.prototype.put=original; a.close(); }});
 });
+
+it('keeps an existing verifier when initial enrollment races or is retried',async()=>{
+ const name=`security-${crypto.randomUUID()}`, locks=serial(), first=new LocalPinSecurity(name,locks), second=new LocalPinSecurity(name,locks);
+ expect(await first.hasVerifier(identity)).toBe(false);
+ const original=await createPinVerifier('123456',MIN_ITERATIONS), replacement=await createPinVerifier('654321',MIN_ITERATIONS);
+ await first.installVerifier(identity,original,true);
+ await expect(second.installVerifier(identity,replacement,true)).rejects.toThrow('sudah tersedia');
+ expect(await second.hasVerifier(identity)).toBe(true);
+ expect(await second.unlock(identity,'123456')).toBe('unlocked');
+ first.close(); second.close();
+});
