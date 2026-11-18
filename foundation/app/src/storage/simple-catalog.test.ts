@@ -1,0 +1,23 @@
+import 'fake-indexeddb/auto';
+import { expect,it } from 'vitest';
+import { BerrieDatabase } from './database';
+import { checkpoint,stageSnapshot } from './recovery';
+import { createCategory,createSimpleMenu,readSimpleCatalog } from './simple-catalog';
+import { readStockGroup } from './stock-groups';
+import { readSkuStockMapping } from './sku-stock-mappings';
+import { readInternalStockReport } from './stock-report';
+import { canonical, type AtomicChange } from './commit';
+import type { LockProvider } from './commit';
+const locks:LockProvider={request:async(_n,fn)=>fn()};
+const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const meta=(n:number)=>({operationId:id(n),localSequence:n,storeId:'store',deviceId:'device',deviceEpoch:1,actorId:'owner',policyVersion:1,recordedAt:'2026-11-18T00:00:00Z'});
+it('kategori lalu menu tersimpan bersama opening dan mapping; staging dan manipulasi ditolak',async()=>{const db=new BerrieDatabase(id(90)),stage=new BerrieDatabase(id(91));try{
+ await createCategory(db,{categoryId:id(1),name:'Minuman',expectedCatalogRevision:null},meta(1),locks);
+ const input={menuId:id(2),skuId:id(3),stockGroupId:id(4),name:'Kopi',categoryId:id(1),price:10000,openingStock:10,minimum:5,expectedCatalogRevision:0};
+ const result=await createSimpleMenu(db,input,meta(2),locks);expect(result).toEqual({id:id(2),code:'N-001',revision:1});
+ expect((await readSimpleCatalog(db,'store')).catalog.menus[0].code).toBe('N-001');expect((await readStockGroup(db,'store',id(4)))?.stockGroup.balance).toBe(10);expect((await readSkuStockMapping(db,'store',id(3)))?.mapping.groupId).toBe(id(4));
+ const snap=await checkpoint(db);expect(snap.ledger).toHaveLength(1);expect((await readInternalStockReport(db,'store')).status).toBe('complete');await stageSnapshot(stage,snap);expect(await checkpoint(stage)).toEqual(snap);
+ const bad=structuredClone(snap);(bad.state.find(x=>x.key===`stock-group:${id(4)}`)!.value as {stockGroup:{balance:number}}).stockGroup.balance=20;await expect(stageSnapshot(new BerrieDatabase(id(92)),bad)).rejects.toThrow();
+ }finally{await db.delete();await stage.delete();}});
+it.each(['state','ledger','audit','outbox','receipts','sequences'] as const)('gagal menulis %s menggulung menu, stok dan mapping',async table=>{const db=new BerrieDatabase(crypto.randomUUID());try{await createCategory(db,{categoryId:id(1),name:'Minuman',expectedCatalogRevision:null},meta(1),locks);const before=await checkpoint(db),hook=()=>{throw Error('gagal menulis')};db[table].hook('creating',hook);db[table].hook('updating',hook);await expect(createSimpleMenu(db,{menuId:id(2),skuId:id(3),stockGroupId:id(4),name:'Kopi',categoryId:id(1),price:10000,openingStock:10,minimum:5,expectedCatalogRevision:0},meta(2),locks)).rejects.toThrow();db[table].hook('creating').unsubscribe(hook);db[table].hook('updating').unsubscribe(hook);expect(await checkpoint(db)).toEqual(before);}finally{await db.delete();}});
+it('checkpoint menolak perubahan opening dan mapping meski receipt ditulis ulang',async()=>{const db=new BerrieDatabase(crypto.randomUUID()),stage=new BerrieDatabase(crypto.randomUUID());try{await createCategory(db,{categoryId:id(1),name:'Minuman',expectedCatalogRevision:null},meta(1),locks);await createSimpleMenu(db,{menuId:id(2),skuId:id(3),stockGroupId:id(4),name:'Kopi',categoryId:id(1),price:10000,openingStock:10,minimum:5,expectedCatalogRevision:0},meta(2),locks);const snap=await checkpoint(db);for(const field of ['opening','mapping']){const bad=structuredClone(snap);const receipt=bad.receipts.find(x=>x.id===id(2))!;const change=JSON.parse(receipt.payload) as AtomicChange;const row=change.state.find(x=>x.key===(field==='opening'?`stock-group:${id(4)}`:`sku-stock-mapping:${JSON.stringify(['store',id(3)])}`))!;if(field==='opening')(row.value as {stockGroup:{balance:number}}).stockGroup.balance=9;else(row.value as {mapping:{groupId:string}}).mapping.groupId=id(5);receipt.payload=canonical(change);bad.state.find(x=>x.key===row.key)!.value=row.value;await expect(stageSnapshot(stage,bad)).rejects.toThrow();} }finally{await db.delete();await stage.delete();}});

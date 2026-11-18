@@ -1,4 +1,5 @@
 import { validateCashCountTransitions } from './cash-count-history';
+import { makeCatalogChange, type CategoryInput, type SimpleMenuInput } from './simple-catalog';
 import { makeDraftCancellationChange, type CancelDraftInput } from './draft-cancellation';
 import { unpaidCancellationKey, unpaidReturnKey, makeUnpaidCancellationChange, makeUnpaidReturnChange, type CancelUnpaidInput, type ReturnUnpaidInput } from './unpaid-cancellations';
 import type { DraftMetadata } from './drafts';
@@ -48,6 +49,19 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
  for(const change of changes) {const key=JSON.stringify([change.storeId,change.deviceId,change.deviceEpoch]);const stream=streams.get(key) ?? [];stream.push(change);streams.set(key,stream);}
  for(const stream of streams.values()) {stream.sort((a,b)=>a.localSequence-b.localSequence);for(let i=1;i<stream.length;i++)edge(stream[i-1].operationId,stream[i].operationId);}
  const stateByKey=new Map(state.map(row=>[row.key,row]));
+ for(const change of changes.filter(c=>c.kind==='catalog.category-create'||c.kind==='catalog.simple-create')) {
+  const p=change.payload as {contractVersion:number;data:CategoryInput|SimpleMenuInput;metadata:StockMetadata;recordedAt:string};
+  if(p?.contractVersion!==1||!p.metadata||!p.data||p.metadata.storeId!==change.storeId||p.metadata.operationId!==change.operationId)throw new Error('Kontrak katalog tidak sah');
+  const versions=byKey.get(`catalog:${change.storeId}`)??[];
+  const revision=p.data.expectedCatalogRevision;
+  const prior=revision===null?undefined:versions.find(v=>v.revision===revision);
+  const record=typed(prior?.value);
+  if(revision!==null&&(!prior||record?.recordType!=='simple-catalog'))throw new Error('Sumber katalog tidak ada');
+  const catalog=record?.recordType==='simple-catalog'?record.catalog:{storeId:change.storeId,categories:[],menus:[]};
+  if(prior)edge(prior.change.operationId,change.operationId);
+  const expected=makeCatalogChange(catalog,revision,p.data,p.metadata,p.recordedAt);
+  if(canonical(change)!==canonical(expected))throw new Error('Efek katalog tidak sesuai');
+ }
  // This contract admits only a standalone first-batch confirmation and never
  // coexists with financial sources, regardless of receipt ordering.
  for(const change of changes.filter(c=>c.kind==='cancellation.unpaid' || c.kind==='return.unpaid')) {
@@ -331,6 +345,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(!current) continue;
    if(!owner) owner=v.change.storeId;
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
+   if(current.recordType==='simple-catalog') {if(key!==`catalog:${owner}`||!['catalog.category-create','catalog.simple-create'].includes(v.change.kind)||current.catalog.storeId!==owner){throw new Error('Histori katalog tidak sah');}previous=current;continue;}
    if(current.recordType==='cash-count') {
     if(!v.change.kind.startsWith('cash-count.') || key!==`cash-count:${current.history.sessionId}` || current.history.storeId!==owner) throw new Error('Histori hitungan tidak sah');
     previous=current;continue;
@@ -413,6 +428,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     previous=current;continue;
    }
    if(current.recordType==='sku-stock-mapping') {
+    if(v.change.kind==='catalog.simple-create'){previous=current;continue;}
     const m=current.mapping, c=v.change, p=c.payload as {data?:unknown;metadata?:Record<string,unknown>} | null;
     const target=stateByKey.get(`stock-group:${m.groupId}`), group=typed(target?.value);
     if(v.revision!==0 || i!==0 || key!==`sku-stock-mapping:${JSON.stringify([m.storeId,m.skuId])}` || c.kind!=='mapping.create' || c.targetId!==m.skuId || m.storeId!==owner || c.state.length!==1 || c.ledger.length!==0 || c.audit.length!==1 || !p?.metadata || canonical(p.data)!==canonical({skuId:m.skuId,groupId:m.groupId}) || !group || group.recordType!=='stock-group' || group.stockGroup.storeId!==m.storeId) throw new Error('Histori pemetaan tidak sah');
@@ -424,6 +440,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     previous=current; continue;
    }
    if(current.recordType==='stock-group') {
+    if(v.change.kind==='catalog.simple-create'){previous=current;continue;}
     const g=current.stockGroup, change=v.change, prev=previous?.recordType==='stock-group'?previous.stockGroup:null;
     if(change.kind==='batch.confirm-first' || change.kind==='payment.draft-cash' || change.kind==='settlement.draft-free' || change.kind==='payment.draft-noncash' || change.kind==='refund.served' || change.kind==='refund.return-stock' || change.kind==='cancellation.paid' || change.kind==='refund.cancelled' || change.kind==='cancellation.refund-paid' || change.kind==='cancellation.return-stock' || change.kind==='cancellation.free' || change.kind==='return.free' || change.kind==='cancellation.unpaid' || change.kind==='return.unpaid') {if(!prev) throw new Error('Stok tanpa sumber');previous=current;continue;}
     const action=v.revision===0?'opening':change.kind==='stock.correction'?'correction':change.kind==='stock.minimum'?'minimum':change.kind==='stock.in'?'in':null;
@@ -527,6 +544,14 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     sessionSource(change,d.cashSessionId);
     if(change.kind!==(v.revision===0?'draft.create':'draft.update') || change.targetId!==d.orderId || key!==`draft:${d.orderId}` || change.state.length!==1 || change.ledger.length!==0 || change.audit.length!==1) throw new Error('Operasi draft tidak sah');
     const payload=change.payload;
+    const catalogPayload=payload as {catalogSource?:{storeId:string;revision:number};data?:{expectedCatalogRevision:number;items:{itemId:string;skuId:string;expectedUnitPrice:number;unitIds:string[];serving:string;note:string}[]}};
+    if(catalogPayload.catalogSource){
+     const source=byKey.get(`catalog:${owner}`)?.find(x=>x.revision===catalogPayload.catalogSource!.revision),catalog=typed(source?.value);
+     if(!source||catalog?.recordType!=='simple-catalog'||catalogPayload.catalogSource.storeId!==owner||catalogPayload.data?.expectedCatalogRevision!==source.revision||!Array.isArray(catalogPayload.data.items)||catalogPayload.data.items.length!==d.items.length)throw new Error('Sumber katalog draft tidak sah');
+     edge(source.change.operationId,change.operationId);
+     for(let n=0;n<d.items.length;n++){const input=catalogPayload.data.items[n],item=d.items[n],menu=catalog.catalog.menus.find(m=>m.skuId===input.skuId);if(!menu?.active||menu.price!==input.expectedUnitPrice||item.id!==input.itemId||item.skuId!==input.skuId||item.name!==menu.name||item.skuPrice!==menu.price||canonical(item.unitIds)!==canonical(input.unitIds)||item.serving!==input.serving||item.note!==input.note||item.toppingPrice!==0||item.promo.kind!=='none'||item.promo.revision!==0||item.choices.length||item.toppings.length)throw new Error('Snapshot katalog draft tidak sesuai');}
+     if(d.channel!=='store'||d.channelAccountId||d.externalOrderId||d.discount.kind!=='none'||d.taxBp!==0||d.serviceBp!==0)throw new Error('Kontrak draft katalog tidak sesuai');
+    }
     if(!payload || typeof payload!=='object' || !('metadata' in payload) || !payload.metadata || typeof payload.metadata!=='object' || !('recordedAt' in payload.metadata) || !('storeTimeZone' in payload.metadata) || typeof payload.metadata.recordedAt!=='string' || typeof payload.metadata.storeTimeZone!=='string') throw new Error('Metadata draft tidak sah');
     draftDateCode(payload.metadata.recordedAt,payload.metadata.storeTimeZone);
     const audit={action:v.revision===0?'create':'update',orderId:d.orderId,actorId:change.actorId,policyVersion:change.policyVersion,occurredAt:payload.metadata.recordedAt,recordedAt:d.savedAt,before:previous?.recordType==='draft'?previous.draft:null,after:d};

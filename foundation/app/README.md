@@ -2,6 +2,12 @@
 
 ## FLOW-01A — akses owner (bukti parsial)
 
+## FLOW-01B — coba transaksi tunai owner
+
+Siapkan Supabase lokal dan Edge Function seperti instruksi FLOW-01A di bawah, lalu buka aplikasi Vite. Masuk sebagai owner dan buka PIN. Di **Menu & Stok**, buat kategori Minuman lalu menu Kopi dengan harga 10000, stok awal 10 dan minimum 5. Di **Kasir**, buka kas dengan uang awal 100000. Ketuk Kopi dua kali atau ubah jumlah menjadi 2, isi pelanggan, lalu **Simpan draft**. Stok tetap 10. Buka pesanan dari **Kasir → Pesanan berjalan → Lanjutkan**, isi diterima 25000, lalu **Simpan pembayaran**. Detail menunjukkan tagihan 20000, diterima 25000, kembali 5000, belum diserahkan; stok 8 dan saldo kas tercatat 120000. Pesanan berikutnya dapat memakai **Bayar nanti**, kemudian bayar tunai tanpa debit stok ulang. Reload meminta PIN lagi dan membaca data yang sama dari IndexedDB.
+
+Harga nol dapat disimpan, tetapi penyelesaian gratis belum tersambung di UI irisan ini. Katalog hanya menu Normal tanpa varian/topping/diskon/pajak/layanan. Command journal lokal menyimpan intent dan sequence untuk pemeriksaan hasil/retry; backup produksi journal masih pekerjaan berikutnya. Transaksi tersimpan lokal tidak berarti ACK server, backup, atau kertas keluar. Job cetak tersimpan, transport printer belum tersedia. Penyajian, tutup kas dan cache PWA/cold reload offline dituju pada FLOW-01C. Tidak ada perubahan layanan produksi atau data produksi pada PR ini.
+
 Konfigurasi lokal terpisah ada di `../supabase/` dengan port 55420–55429 dan konfirmasi email aktif; konfigurasi ini diuji dengan Supabase CLI 2.84.2 dan Docker Desktop. Jalankan dari `foundation/`: `node supabase/scripts/start-local.mjs`, `node supabase/scripts/create-dev-key.mjs`, lalu `supabase functions serve berrie-access --env-file supabase/.env.local`. Skrip start wajib setiap kali proyek dimulai: ia menghapus plugin wildcard CORS pada route fungsi gateway lokal agar allowlist Edge Function berlaku; jalankan tes integrasi untuk memverifikasinya. Salin `app/.env.example` ke `app/.env.local`, isi publishable key dari `supabase status` dan isi `VITE_BERRIE_PERMIT_PUBLIC_KEYS` dengan JSON dari `supabase/permit-public.local.json`. Jalankan `npm ci` lalu `npm run dev -- --host 127.0.0.1` dari `app/`. Email lokal tersedia di Mailpit pada port 55424. Untuk tes dari `app/`, dengan function masih berjalan, gunakan `npm run test:access:integration` dan `npm run test:access:e2e`; tes membuat akun dan toko pada proyek lokal terisolasi. Gunakan `supabase stop` dari `foundation/` untuk menghentikan layanan; jangan reset database lain.
 
 Key privat dan service role hanya untuk server; jangan masukkan ke `VITE_` atau commit file lokal. Daftar melalui UI, buka email konfirmasi, masuk, isi toko, lalu buat PIN. Migrasi, fungsi, Auth dan alur layar telah diuji pada Supabase lokal yang terisolasi; cakupan dan keterbatasan bukti ada pada pelacak. Ini belum membuktikan seluruh acceptance atau kesiapan produksi. Staf, reset, transfer perangkat, layanan produksi dan PWA offline penuh di luar tahap A. Tahap B selanjutnya mencakup katalog/stok, buka kas, draft dan pembayaran tunai.
@@ -21,7 +27,7 @@ Record dan receipt lama serta generik tetap memakai kontraknya; validasi histori
 
 Validator record dan histori memeriksa hubungan sumber draft, mapping, batch, debit dan job pada commit dan staging; data generik lama tidak diasumsikan sebagai record baru. Ini API internal tanpa UI dan tanpa pengiriman printer. `actorId` dan `policyVersion` bukan bukti izin: autentikasi, permit, validasi katalog dan izin sesi operasional tetap prasyarat integrasi. Job persisten bukan bukti cetak fisik; staging bukan restore produksi.
 
-Scaffold belum dapat digunakan untuk transaksi. UI dan data contoh tetap di `../berrie-site/`; integrasi UI mengikuti T-06 setelah fondasi dan izin siap.
+Catatan historis primitive internal di bagian ini mendahului sambungan UI FLOW-01B; status terkini dan batasnya ada di bagian FLOW-01B serta pelacak.
 
 Dengan Node 22 dan npm: `npm ci --legacy-peer-deps`, `npm run dev`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. `npm run test:browser` menjalankan tes Chrome lokal melalui Playwright; konfigurasi saat ini memakai Chrome di `/Applications/Google Chrome.app`. `.env.example` tidak berisi rahasia. Lockfile mencatat versi terpasang.
 

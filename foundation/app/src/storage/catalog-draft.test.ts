@@ -1,0 +1,20 @@
+import 'fake-indexeddb/auto';
+import { expect,it } from 'vitest';
+import { BerrieDatabase } from './database';
+import { createCategory,createSimpleMenu } from './simple-catalog';
+import { openCashSession } from './cash-sessions';
+import { saveDraftFromCatalog,readDraft } from './drafts';
+import { checkpoint,stageSnapshot } from './recovery';
+import type { LockProvider } from './commit';
+const locks:LockProvider={request:async(_n,fn)=>fn()};
+const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const meta=(n:number)=>({operationId:id(n),localSequence:n,storeId:'store',deviceId:'device',deviceEpoch:1,actorId:'owner',policyVersion:1,recordedAt:'2026-11-18T00:00:00Z'});
+it('draft memakai harga katalog di transaksi yang sama dan tidak mengurangi stok',async()=>{const db=new BerrieDatabase(id(90)),stage=new BerrieDatabase(id(91));try{
+ await createCategory(db,{categoryId:id(1),name:'Minuman',expectedCatalogRevision:null},meta(1),locks);
+ await createSimpleMenu(db,{menuId:id(2),skuId:id(3),stockGroupId:id(4),name:'Kopi',categoryId:id(1),price:10000,openingStock:10,minimum:5,expectedCatalogRevision:0},meta(2),locks);
+ await openCashSession(db,{sessionId:id(5),number:'K-1',initialCustodian:'owner',openingAmount:100000,timeZone:'Asia/Jakarta'},meta(3),locks);
+ const input={orderId:id(6),cashSessionId:id(5),expectedCatalogRevision:1,customer:'Ani',serving:'takeaway',note:'',items:[{itemId:id(7),skuId:id(3),expectedUnitPrice:10000,unitIds:[id(8),id(9)],serving:'takeaway',note:''}]};
+ await saveDraftFromCatalog(db,input,{...meta(4),storeTimeZone:'Asia/Jakarta'},null,locks);const draft=(await readDraft(db,id(6)))!.draft;expect(draft.items[0].skuPrice).toBe(10000);expect(draft.displayNumber).toMatch(/-0001$/);const snap=await checkpoint(db);expect((snap.state.find(x=>x.key===`stock-group:${id(4)}`)!.value as {stockGroup:{balance:number}}).stockGroup.balance).toBe(10);await stageSnapshot(stage,snap);
+ await expect(saveDraftFromCatalog(db,{...input,expectedCatalogRevision:0},{...meta(5),storeTimeZone:'Asia/Jakarta'},null,locks)).rejects.toThrow();
+ await expect(saveDraftFromCatalog(db,{...input,items:[{...input.items[0],expectedUnitPrice:9000}]},{...meta(5),storeTimeZone:'Asia/Jakarta'},null,locks)).rejects.toThrow();expect(await checkpoint(db)).toEqual(snap);
+ }finally{await db.delete();await stage.delete();}});
