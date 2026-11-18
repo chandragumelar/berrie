@@ -104,6 +104,12 @@ export function sessionCloseBlockers(s:Snapshot,storeId:string,sessionId:string)
  return structuredClone({blockers,incomplete:incomplete.filter((v,i)=>i===0 || v.key!==incomplete[i-1].key || v.reason!==incomplete[i-1].reason)});
 }
 
+/** Project several orders from one authorized, validated checkpoint. */
+export function ordersFromSnapshot(s:Snapshot,storeId:string,orderIds:string[]):Record<string,OrderStatusRead> {
+ assertId(storeId);const cs=changes(s);
+ return Object.fromEntries(orderIds.map(id=>{assertId(id);return [id,structuredClone(read(s,cs,storeId,id))];}));
+}
+
 /** Internal read only; an empty result is not authorization to close. */
 export async function readSessionCloseBlockers(db:BerrieDatabase,storeId:string,sessionId:string):Promise<SessionBlockersRead> {
  return sessionCloseBlockers(await snapshot(db),storeId,sessionId);

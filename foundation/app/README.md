@@ -413,3 +413,23 @@ Satu commit mengonfirmasi batch pertama, mendebit semua unit fisik, menyimpan se
 ### Pembayaran non-tunai draft berizin (parsial T-04/T-09/T-10)
 
 `AuthorizedPayments.payDraftNoncash` menerima draft internal tersimpan dan pernyataan verifikasi manual QRIS, transfer atau e-wallet aktif. PIN, permit/policy, sesi dan sumber diperiksa; batch pertama, debit seluruh unit fisik, settlement, Payment dan job tersimpan atomik. Guard berlaku saat commit maupun replay; owner expired hanya untuk seluruh unit yang terbukti lama. Pembayaran tidak menambah kas tunai atau menyajikan pesanan. Pernyataan verifikasi bukan bukti otomatis dari penyedia. Otorisasi pembayaran tidak membuktikan harga berasal dari katalog tepercaya; create/update draft, katalog dan UI masih diperlukan. Staging checkpoint bukan restore produksi dan job bukan bukti kertas tercetak.
+
+## Coba giliran tunai owner sampai tutup kas (FLOW-01C, irisan)
+
+Dari `foundation/`, jalankan layanan lokal terisolasi:
+
+```sh
+node supabase/scripts/start-local.mjs
+node supabase/scripts/create-dev-key.mjs
+supabase functions serve berrie-access --env-file supabase/.env.local
+```
+
+Siapkan `app/.env.local` mengikuti bagian konfigurasi lokal di atas. Dari `foundation/app/`, jalankan `npm ci` dan `npm run dev -- --host 127.0.0.1`. Buka URL Vite. Daftar owner baru, ambil tautan email di Mailpit `http://127.0.0.1:55424`, aktifkan toko/perangkat dan PIN. Buat kategori Minuman, menu Kopi Rp10.000 dengan stok awal 10, lalu buka Kasir dengan uang awal Rp100.000.
+
+Simpan draft A (Kopi qty2): stok tetap 10. Lanjutkan, bayar tunai dengan diterima Rp25.000: Payment Rp20.000, kembali Rp5.000, stok 8, saldo tercatat Rp120.000. Di Pesanan, serahkan satu unit lalu sisanya; kerja berubah 0/2 → 1/2 → 2/2 dan A masuk Riwayat. B (qty1) pilih Bayar nanti: stok 7 dan saldo tetap Rp120.000. Serahkan B dahulu; blocker belum bayar tetap. Lanjutkan ke bayar tunai Rp10.000: saldo Rp130.000. Simpan draft C lalu buka Kas → Mulai tutup kas; nomor C menahan penutupan. Buka C, batalkan dengan alasan, lalu kembali ke Kas.
+
+Masukkan uang akhir fisik Rp128.000 tanpa angka ekspektasi pada form awal. Sesudah Simpan hitungan, Kas menunjukkan ekspektasi Rp130.000 dan selisih −Rp2.000; pelayanan dijeda. Reload saat origin tersedia dan buka lagi dengan PIN: hitungan aktif tetap ada. Revisi fisik ke Rp129.000. Penutupan menuntut alasan untuk selisih −Rp1.000. Simpan penutupan kas lalu baca ringkasan sesi tertutup dan Kasir → Mulai bertugas. Uang awal sesi berikutnya diisi dari laci fisik, misalnya Rp50.000. Ringkasan sesi sebelumnya masih tersedia di Kas. `Batal hitungan` menyimpan jejak pembatalan dan membuka kembali pelayanan; Rp0 fisik sah bila diisi eksplisit.
+
+Untuk memeriksa offline operasional, putus jaringan **setelah aplikasi termuat**, lalu simpan hitungan atau tutup. Kembalikan origin sebelum reload; cold reload offline, service worker, cache/install/update PWA masih pekerjaan lanjutan. Bila hasil submit tidak pasti, panel **Periksa hasil** membaca receipt lokal berizin; **Coba lagi** mengirim intent, ID operasi, sequence dan waktu yang sama. Jangan membuat transaksi baru sampai hasil lama pasti. Status lokal tidak membuktikan ACK server, backup, verifikasi non-tunai atau kertas tercetak. Refund due dan sumber incomplete tetap menahan close; aksi refund/return, handover dan pergerakan kas UI belum tersedia pada irisan ini.
+
+Jalankan regresi UI nyata dengan `npm run test:access:e2e -- flow-e2e/owner-shift-close.spec.ts` ketika Supabase lokal, Edge Function dan Mailpit aktif. Tes membuat akun, menu, sesi, pesanan, pembayaran, penyajian, hitungan dan close lewat UI; IndexedDB hanya dibaca untuk memeriksa efek dan mensimulasikan journal `unknown` sesudah close.

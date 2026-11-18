@@ -4,6 +4,15 @@
 .cashier-grid input,.cashier-grid select{min-height:44px;width:100%}
 .shell li{margin-block:.5rem}
 .shell dl{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem}
+.shell,.shell .panel,.shell section{min-width:0}
+.shell .panel{overflow-wrap:anywhere}
+.cash-workspace{display:grid;gap:1rem}
+.cash-workspace label,.cash-workspace input{display:block;width:100%;max-width:32rem}
+.cash-workspace input{min-height:44px}
+.cash-workspace dl{grid-template-columns:minmax(0,1fr) auto}
+.cash-blocker{border:1px solid #dfe1e6;border-radius:8px;padding:1rem}
+.order-groups{display:grid;gap:1rem}
+.order-groups button{max-width:100%;white-space:normal;text-align:left}
 @media(max-width:600px){
   html{scroll-padding-bottom:5rem}
   .shell.shell{padding-bottom:calc(5rem + env(safe-area-inset-bottom))}
