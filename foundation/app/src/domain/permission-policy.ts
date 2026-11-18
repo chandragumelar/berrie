@@ -1,4 +1,4 @@
-import { halfUp, integer } from './money';
+import { halfUp, integer } from './money.ts';
 
 export const configurableActivities = ['refund','cancel-confirmed','discount','free-settlement','stock-correction','stock-in','cash-adjustment','price-change','sku-promo','payment-correction','archive','sale-status','late-order','platform-adjustment','stock-recap'] as const;
 export type ConfigurableActivity = typeof configurableActivities[number];

@@ -77,9 +77,14 @@ export class LocalPinSecurity {
   s.lastTime=Math.max(now,s.lastTime); return s;
  }
  /** Internal provisioning primitive; caller must implement online authentication separately. */
- async installVerifier(identity:PinIdentity,verifier:PinVerifier):Promise<void> {
+ async hasVerifier(identity:PinIdentity):Promise<boolean> {
+  const key=identityKey(identity);
+  return this.run(async()=>{ const row=await this.db.credentials.get(key); if(row) validRow(row); return !!row; });
+ }
+ /** Provisioning may require refusing replacement, including races across tabs. */
+ async installVerifier(identity:PinIdentity,verifier:PinVerifier,onlyIfAbsent=false):Promise<void> {
   this.token=null; const key=identityKey(identity); validateVerifier(verifier); const copy={...verifier};
-  const installed=await this.run(async()=>{ const {wall:now,fault}=this.sample(); const old=await this.db.credentials.get(key); if(old) validRow(old); const s=await this.session(now,fault);
+  const installed=await this.run(async()=>{ const {wall:now,fault}=this.sample(); const old=await this.db.credentials.get(key); if(old) validRow(old); if(old && onlyIfAbsent) throw new Error('Verifier sudah tersedia'); const s=await this.session(now,fault);
    if(s.clockFault || (old && (old.clockFault || now<old.lastTime))) { s.clockFault=true; s.identity=null; await this.db.session.put(s); return false; }
    for(const other of await this.db.credentials.toArray()) { validRow(other); if(other.key!==key && (other.verifier.salt===copy.salt || other.verifier.hash===copy.hash)) throw new Error('Verifier harus unik per identitas'); }
    await this.db.credentials.put({key,verifier:copy,revision:increment(old?.revision ?? 0),verifierRevision:increment(old?.verifierRevision ?? 0),failures:0,cooldownDuration:0,cooldownMarker:0,lastTime:now,clockFault:false});

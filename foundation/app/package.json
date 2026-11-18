@@ -9,9 +9,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run src",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:access:integration": "vitest run integration/access.test.ts",
+    "test:access:e2e": "playwright test -c playwright.access.config.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
     "dexie": "^4.2.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

@@ -1,5 +1,12 @@
 # Fondasi aplikasi Berrie
 
+## FLOW-01A — akses owner (bukti parsial)
+
+Konfigurasi lokal terpisah ada di `../supabase/` dengan port 55420–55429 dan konfirmasi email aktif; konfigurasi ini diuji dengan Supabase CLI 2.84.2 dan Docker Desktop. Jalankan dari `foundation/`: `node supabase/scripts/start-local.mjs`, `node supabase/scripts/create-dev-key.mjs`, lalu `supabase functions serve berrie-access --env-file supabase/.env.local`. Skrip start wajib setiap kali proyek dimulai: ia menghapus plugin wildcard CORS pada route fungsi gateway lokal agar allowlist Edge Function berlaku; jalankan tes integrasi untuk memverifikasinya. Salin `app/.env.example` ke `app/.env.local`, isi publishable key dari `supabase status` dan isi `VITE_BERRIE_PERMIT_PUBLIC_KEYS` dengan JSON dari `supabase/permit-public.local.json`. Jalankan `npm ci` lalu `npm run dev -- --host 127.0.0.1` dari `app/`. Email lokal tersedia di Mailpit pada port 55424. Untuk tes dari `app/`, dengan function masih berjalan, gunakan `npm run test:access:integration` dan `npm run test:access:e2e`; tes membuat akun dan toko pada proyek lokal terisolasi. Gunakan `supabase stop` dari `foundation/` untuk menghentikan layanan; jangan reset database lain.
+
+Key privat dan service role hanya untuk server; jangan masukkan ke `VITE_` atau commit file lokal. Daftar melalui UI, buka email konfirmasi, masuk, isi toko, lalu buat PIN. Migrasi, fungsi, Auth dan alur layar telah diuji pada Supabase lokal yang terisolasi; cakupan dan keterbatasan bukti ada pada pelacak. Ini belum membuktikan seluruh acceptance atau kesiapan produksi. Staf, reset, transfer perangkat, layanan produksi dan PWA offline penuh di luar tahap A. Tahap B selanjutnya mencakup katalog/stok, buka kas, draft dan pembayaran tunai.
+
+
 ## Pembayaran tunai batch pertama (internal)
 
 `payConfirmedFirstBatchCash(db, {orderId, expectedBatchRevision, expectedSessionRevision, received}, metadata)` mencatat uang yang benar-benar diterima untuk seluruh unit batch pertama confirmed, baik belum, sebagian, maupun seluruhnya disajikan. Jumlah harus positif dan `received` integer rupiah aman minimal tagihan; kembalian adalah selisih, dan ledger `sale` menambah kas sebesar tagihan. Pembayaran langsung untuk order platform juga memakai Payment biasa; tagihan platform tidak dibuat. API ini tidak menangani draft belum confirmed; jalur tunai draft dijelaskan di bawah. Jalur Rp0 internal dijelaskan di bawah; batch tambahan dan metode lain belum ditangani.
