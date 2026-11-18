@@ -65,6 +65,9 @@ Deno.serve(async(req:Request)=>{
  if(typeof result.error==='string') return fail(result.error in statuses?result.error:'service_unavailable');
  if(!obj(result.grant) || !obj(result.store) || !obj(result.grant.payload) || !obj(result.grant.policy_snapshot)) return fail('service_unavailable');
  const grant=result.grant, store=result.store;
+ // The transaction has already rechecked the owner, binding, epoch and expiry.
+ // A finalized grant must replay the original response without another signature.
+ if(grant.response_json!==null) return obj(grant.response_json)?reply(grant.response_json):fail('service_unavailable');
  if((grant.payload as Record<string,unknown>).keyId!==keyId) return fail('signing_unavailable');
  let signature:string;
  try { const bytes=await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},privateKey,permitBytes(grant.payload as never)); if(bytes.byteLength!==64) return fail('signing_unavailable'); signature=base64url(bytes); } catch { return fail('signing_unavailable'); }

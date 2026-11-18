@@ -29,6 +29,16 @@ async function owner(confirmed:boolean) {
  return {id:data.user.id,email,password,token:login.session.access_token};
 }
 describe('Supabase access integration',()=>{
+ it('restricts CORS preflight to configured local origins',async()=>{
+  const allowed=await fetch(`${endpoint}/bootstrap`,{method:'OPTIONS',headers:{Origin:'http://127.0.0.1:5173'}});
+  expect(allowed.status).toBe(204);expect(allowed.headers.get('access-control-allow-origin')).toBe('http://127.0.0.1:5173');
+  const denied=await fetch(`${endpoint}/bootstrap`,{method:'OPTIONS',headers:{Origin:'https://untrusted.example'}});
+  expect(denied.status).toBe(403);expect(denied.headers.get('access-control-allow-origin')).toBeNull();
+  const actual=await fetch(`${endpoint}/bootstrap`,{method:'POST',headers:{Origin:'https://untrusted.example',apikey:anon,'Content-Type':'application/json'},body:JSON.stringify({deviceId:null})});
+  expect(actual.status).toBe(403);expect(actual.headers.get('access-control-allow-origin')).toBeNull();
+  const allowedActual=await fetch(`${endpoint}/bootstrap`,{method:'POST',headers:{Origin:'http://127.0.0.1:5173',apikey:anon,'Content-Type':'application/json'},body:JSON.stringify({deviceId:null})});
+  expect(allowedActual.status).toBe(401);expect(allowedActual.headers.get('access-control-allow-origin')).toBe('http://127.0.0.1:5173');
+ });
  it('rejects missing/invalid JWT and extra input without creating stores',async()=>{
   expect((await call('bootstrap',{deviceId:null})).status).toBe(401);
   expect((await call('bootstrap',{deviceId:null},'invalid')).status).toBe(401);
