@@ -10,15 +10,17 @@ import { clearLocalAuthSession } from './supabase-client';
 import { parseAccessGrant, type AccessGrant } from './contracts';
 import { EnrollmentStore, type Enrollment, type AccessIntent } from './enrollment-store';
 import type { PermitKeys } from '../domain/offline-permit';
+import { OwnerCashier } from '../application/owner-cashier';
 
 export type AccessScreen='config-error'|'signed-out'|'verify-email'|'store-setup'|'activating'|'pin-setup'|'locked'|'unlocked'|'limited'|'device-conflict'|'blocked';
 export interface AccessState { screen:AccessScreen; error:string|null; busy:boolean; grant:AccessGrant|null; decision:PermitDecision|null; email:string; canRenew:boolean }
 export class AccessController {
  state:AccessState={screen:'signed-out',error:null,busy:false,grant:null,decision:null,email:'',canRenew:false};
- private owner:string|null=null; private row:Enrollment|null=null; private security:LocalPinSecurity|null=null; private permits:OfflinePermitStorage|null=null; private business:BerrieDatabase|null=null; private stopActivity:(()=>void)|null=null; private monitor:number|null=null;
+ private owner:string|null=null; private row:Enrollment|null=null; private security:LocalPinSecurity|null=null; private permits:OfflinePermitStorage|null=null; private business:BerrieDatabase|null=null; private cashierFacade:OwnerCashier|null=null; private stopActivity:(()=>void)|null=null; private monitor:number|null=null;
  constructor(private client:SupabaseClient,private api:AccessApi,private keys:PermitKeys,private enrollments:EnrollmentStore,private notify:(s:AccessState)=>void) {}
  private set(change:Partial<AccessState>):void { this.state={...this.state,...change}; this.notify(this.state); }
- private disposeSecurity():void { this.stopActivity?.(); this.stopActivity=null; if(this.monitor!==null) window.clearInterval(this.monitor); this.monitor=null; this.security?.close(); this.permits?.close(); this.business?.close(); this.security=null;this.permits=null;this.business=null; }
+ private disposeSecurity():void { this.cashierFacade?.invalidate();this.cashierFacade=null;this.stopActivity?.(); this.stopActivity=null; if(this.monitor!==null) window.clearInterval(this.monitor); this.monitor=null; this.security?.close(); this.permits?.close(); this.business?.close(); this.security=null;this.permits=null;this.business=null; }
+ cashier():OwnerCashier {if(!this.cashierFacade||!this.state.grant||!['unlocked','limited'].includes(this.state.screen))throw new Error('Kasir terkunci');return this.cashierFacade;}
  dispose():void { this.disposeSecurity();this.enrollments.close(); }
  private async openGrant(row:Enrollment):Promise<AccessGrant> {
   if(!row.grant) throw new Error('Grant belum tersedia');
@@ -137,9 +139,10 @@ export class AccessController {
    if(!decision.allowed) { await this.security.lock(); this.set({screen:'locked',error:'Perlu verifikasi online.'});return; }
    if(this.row.stage==='grant-received') { await this.enrollments.complete(this.owner,this.state.grant.grantId);this.row=(await this.enrollments.get(this.owner))!; }
    this.set({screen:decision.status==='limited'?'limited':'unlocked',decision,error:null});
+   this.cashierFacade?.invalidate();this.cashierFacade=new OwnerCashier(this.state.grant,this.security,this.permits,this.business);
    this.stopActivity?.(); this.stopActivity=observePinActivity(new PinActivity(this.security));
    if(this.monitor!==null) window.clearInterval(this.monitor);
-   this.monitor=window.setInterval(()=>{void this.security?.check(true).then(ok=>{if(!ok) this.set({screen:'locked',decision:null});}).catch(()=>this.set({screen:'locked',decision:null}));},1000);
+   this.monitor=window.setInterval(()=>{void this.security?.check(true).then(ok=>{if(!ok){this.cashierFacade?.invalidate();this.cashierFacade=null;this.set({screen:'locked',decision:null});}}).catch(()=>{this.cashierFacade?.invalidate();this.cashierFacade=null;this.set({screen:'locked',decision:null});});},1000);
   } catch { await this.security.lock(); this.set({screen:'locked',error:'Izin atau PIN tidak dapat diperiksa.'}); } finally { this.set({busy:false}); }
  }
  async refresh():Promise<void> {
@@ -156,7 +159,7 @@ export class AccessController {
    this.set({grant,decision,screen:decision.allowed?(decision.status==='limited'?'limited':'unlocked'):'locked'});
   } catch(e) { await this.handleError(e); } finally { this.set({busy:false}); }
  }
- async lock():Promise<void> { await this.security?.lock(); this.set({screen:'locked',decision:null,error:null}); }
+ async lock():Promise<void> { this.cashierFacade?.invalidate();this.cashierFacade=null;await this.security?.lock(); this.set({screen:'locked',decision:null,error:null}); }
  async signOut():Promise<void> {
   await this.security?.lock();
   if(this.owner && this.row) await this.enrollments.setAccessState(this.owner,{explicitSignedOut:true});

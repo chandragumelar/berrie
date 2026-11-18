@@ -1,0 +1,15 @@
+.cashier-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:1.25rem}
+.cashier-grid section,.cashier-grid form{display:grid;align-content:start;gap:.75rem}
+.cashier-grid button,.shell nav button{min-height:44px}
+.cashier-grid input,.cashier-grid select{min-height:44px;width:100%}
+.shell li{margin-block:.5rem}
+.shell dl{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem}
+@media(max-width:600px){
+  html{scroll-padding-bottom:5rem}
+  .shell.shell{padding-bottom:calc(5rem + env(safe-area-inset-bottom))}
+  .shell.shell nav{position:fixed;z-index:10;bottom:0;left:0;right:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;margin:0;padding-bottom:env(safe-area-inset-bottom);background:#fff;border-top:1px solid #dfe1e6;box-shadow:0 -2px 12px #091e4214}
+  .shell.shell nav button{min-width:0;min-height:56px;padding:.25rem;font-size:.7rem;line-height:1.15;border-radius:0;flex:none}
+  .shell.shell nav button[aria-current=page]{border-top:3px solid #0052cc}
+  .shell .panel{padding-bottom:5rem}
+  .shell .panel button{scroll-margin-bottom:5rem}
+}

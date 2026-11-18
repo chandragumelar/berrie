@@ -22,11 +22,11 @@ test('daftar melalui email lokal, aktivasi, PIN, reload dan logout',async({page,
  await page.getByLabel('Nama toko').fill('Toko integrasi');await page.getByRole('button',{name:'Aktifkan perangkat'}).click();
  await expect(page.getByRole('heading',{name:'Buat PIN'})).toBeVisible();
  await page.getByLabel('PIN',{exact:true}).fill('483027');await page.getByLabel('Konfirmasi PIN').fill('483027');await page.getByRole('button',{name:'Simpan PIN'}).click();
- await expect(page.getByText('Transaksi belum tersedia pada versi ini.')).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Kasir'})).toBeVisible();
  await page.getByRole('button',{name:'Pengaturan'}).click();const deviceBefore=await page.locator('dt').filter({hasText:'ID perangkat'}).locator('xpath=following-sibling::dd[1]').textContent();expect(deviceBefore).toBeTruthy();
  await page.reload();await expect(page.getByRole('heading',{name:'Buka kasir'})).toBeVisible();
  await page.getByLabel('PIN').fill('483027');await page.getByRole('button',{name:'Buka',exact:true}).click();
- await expect(page.getByText('Transaksi belum tersedia pada versi ini.')).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Kasir'})).toBeVisible();
  await page.getByRole('button',{name:'Pengaturan'}).click();await expect(page.locator('dt').filter({hasText:'ID perangkat'}).locator('xpath=following-sibling::dd[1]')).toHaveText(deviceBefore!);
  await page.setViewportSize({width:1024,height:768});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  const other=await page.context().browser()!.newContext();const second=await other.newPage();
@@ -34,7 +34,7 @@ test('daftar melalui email lokal, aktivasi, PIN, reload dan logout',async({page,
  await expect(second.getByRole('heading',{name:'Kasir aktif di perangkat lain'})).toBeVisible();await other.close();
  await page.getByRole('button',{name:'Kunci'}).click();await page.context().setOffline(true);
  await page.getByLabel('PIN').fill('483027');await page.getByRole('button',{name:'Buka',exact:true}).click();
- await expect(page.getByText('Transaksi belum tersedia pada versi ini.')).toBeVisible();await page.context().setOffline(false);
+ await expect(page.getByRole('heading',{name:'Kasir'})).toBeVisible();await page.context().setOffline(false);
  await page.getByRole('button',{name:'Keluar akun'}).click();await expect(page.getByRole('heading',{name:'Masuk'})).toBeVisible();
  await page.getByLabel('Email').fill(email);await page.getByLabel('Kata sandi').fill(password);await page.getByRole('button',{name:'Masuk',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Buka kasir'})).toBeVisible();await page.getByLabel('PIN').fill('483027');await page.getByRole('button',{name:'Buka',exact:true}).click();

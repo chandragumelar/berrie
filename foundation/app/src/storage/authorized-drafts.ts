@@ -8,10 +8,12 @@ import { storedUnitBeforeSnapshot } from './permit-capability';
 import { checkpoint, type Snapshot } from './recovery';
 import { validateCheckpoint } from './validate-checkpoint';
 import { readDraft } from './drafts';
+import { saveDraftFromCatalog } from './drafts';
 import { confirmFirstBatch, type ConfirmFirstBatchInput } from './confirm-first-batch';
 import { cancelStoredDraft, readCancelledDraft, type CancelDraftInput } from './draft-cancellation';
 
 export interface DraftOperation {operationId:string;localSequence:number;recordedAt:string}
+export interface CatalogDraftInput {orderId:string;cashSessionId:string;expectedDraftRevision:number|null;expectedCatalogRevision:number;customer:string;serving:'dine_in'|'takeaway';note:string;items:{itemId:string;skuId:string;expectedUnitPrice:number;unitIds:string[];serving:'dine_in'|'takeaway';note:string}[]}
 const direct:LockProvider={request:async(_name,fn)=>fn()};
 const exact=(v:unknown,keys:string[])=>!!v && typeof v==='object' && !Array.isArray(v) && Object.getPrototypeOf(v)===Object.prototype && Object.keys(v).sort().join(',')===[...keys].sort().join(',');
 const id=(v:unknown):v is string=>typeof v==='string' && !!v.trim() && v.length<=200;
@@ -56,6 +58,16 @@ export class AuthorizedDrafts {
  }
  readDraft(i:PinIdentity,input:{id:string}) {return this.read(i,input,false);}
  readCancelledDraft(i:PinIdentity,input:{id:string}) {return this.read(i,input,true);}
+ private saveFromCatalog(identityInput:PinIdentity,input:CatalogDraftInput,operation:DraftOperation,create:boolean){
+  try {const i=identity(identityInput),d=copyInput(input) as CatalogDraftInput,o=copyInput(operation) as DraftOperation;canonical({i,d,o});
+   const uuid=(v:unknown)=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
+   if(!exact(d,['orderId','cashSessionId','expectedDraftRevision','expectedCatalogRevision','customer','serving','note','items'])||!uuid(d.orderId)||!uuid(d.cashSessionId)||!integer(d.expectedCatalogRevision)||(create?d.expectedDraftRevision!==null:!integer(d.expectedDraftRevision))||typeof d.customer!=='string'||!d.customer.trim()||d.customer.trim().length>80||typeof d.note!=='string'||d.note.length>500||!['dine_in','takeaway'].includes(d.serving)||!Array.isArray(d.items)||!d.items.length||!d.items.every(x=>exact(x,['itemId','skuId','expectedUnitPrice','unitIds','serving','note'])&&uuid(x.itemId)&&uuid(x.skuId)&&integer(x.expectedUnitPrice)&&x.expectedUnitPrice<=999999999&&Array.isArray(x.unitIds)&&x.unitIds.length>=1&&x.unitIds.length<=999&&x.unitIds.every(uuid)&&['dine_in','takeaway'].includes(x.serving)&&typeof x.note==='string'&&x.note.length<=200)||new Set(d.items.map(x=>x.itemId)).size!==d.items.length||new Set(d.items.flatMap(x=>x.unitIds)).size!==d.items.reduce((n,x)=>n+x.unitIds.length,0)||!exact(o,['operationId','localSequence','recordedAt'])||!id(o.operationId)||!integer(o.localSequence,1)||typeof o.recordedAt!=='string'||!Number.isFinite(Date.parse(o.recordedAt)))throw new Error('Input draft tidak sah');
+   d.customer=d.customer.trim();
+   return this.execute(i,async ctx=>{if(ctx.role!=='owner')throw new Error('Hanya owner');ctx.guard(false);const snap=validateCheckpoint(await checkpoint(this.db));const session=snap.state.find(r=>r.key===`cash-session:${d.cashSessionId}`)?.value as BusinessRecord|undefined;if(session?.recordType!=='cash-session'||session.session.storeId!==ctx.storeId)throw new Error('Sesi tidak sesuai');const data={...d};delete (data as Partial<CatalogDraftInput>).expectedDraftRevision;const result=await saveDraftFromCatalog(this.db,data,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion,storeTimeZone:session.session.timeZone},d.expectedDraftRevision,direct,()=>ctx.guard(false));return result as {orderId:string;displayNumber:string;revision:number};});
+  }catch{return Promise.resolve({status:'denied'} as const);}
+ }
+ createFromCatalog(i:PinIdentity,input:CatalogDraftInput,operation:DraftOperation){return this.saveFromCatalog(i,input,operation,true);}
+ updateFromCatalog(i:PinIdentity,input:CatalogDraftInput,operation:DraftOperation){return this.saveFromCatalog(i,input,operation,false);}
  confirmFirstBatch(identityInput:PinIdentity,input:ConfirmFirstBatchInput,operation:DraftOperation) {
   try {const i=identity(identityInput),d=copyInput(input) as ConfirmFirstBatchInput,o=copyInput(operation) as DraftOperation;canonical({i,d,o});
    if(!exact(d,['orderId','expectedDraftRevision','mappings','groups']) || !id(d.orderId) || !integer(d.expectedDraftRevision) || !Array.isArray(d.mappings) || !Array.isArray(d.groups) || !d.mappings.every(m=>exact(m,['skuId','groupId','revision']) && id(m.skuId) && id(m.groupId) && integer(m.revision)) || !d.groups.every(g=>exact(g,['groupId','balance','revision']) && id(g.groupId) && integer(g.balance) && integer(g.revision)) || new Set(d.mappings.map(m=>m.skuId)).size!==d.mappings.length || new Set(d.groups.map(g=>g.groupId)).size!==d.groups.length || !exact(o,['operationId','localSequence','recordedAt']) || !id(o.operationId) || !integer(o.localSequence,1) || typeof o.recordedAt!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(o.recordedAt) || !Number.isFinite(Date.parse(o.recordedAt))) throw new Error('Input tidak sah');
