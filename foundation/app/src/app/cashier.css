@@ -13,6 +13,11 @@
 .cash-blocker{border:1px solid #dfe1e6;border-radius:8px;padding:1rem}
 .order-groups{display:grid;gap:1rem}
 .order-groups button{max-width:100%;white-space:normal;text-align:left}
+.shell [aria-label="Metode pembayaran"],.shell [aria-label="Bayar"]{display:grid;gap:.75rem;max-width:32rem}
+.shell [aria-label="Metode pembayaran"] label,.shell [aria-label="Bayar"] label{display:flex;align-items:center;gap:.65rem;min-height:44px}
+.shell [aria-label="Metode pembayaran"] input[type="checkbox"],.shell [aria-label="Bayar"] input[type="checkbox"]{width:1.25rem;height:1.25rem;min-height:0;flex:none}
+.shell [aria-label="Bayar"] label:has(input:not([type="checkbox"])),.shell [aria-label="Bayar"] label:has(select){display:grid;align-items:start}
+.shell [aria-label="Bayar"] .actions,.shell [aria-label="Metode pembayaran"] .actions{display:flex;flex-wrap:wrap;gap:.5rem}
 @media(max-width:600px){
   html{scroll-padding-bottom:5rem}
   .shell.shell{padding-bottom:calc(5rem + env(safe-area-inset-bottom))}

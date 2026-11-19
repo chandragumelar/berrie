@@ -1,5 +1,15 @@
 # Fondasi aplikasi Berrie
 
+## FLOW-01D · pembayaran non-tunai manual owner
+
+Pada perangkat kasir aktif, owner membuka **Pengaturan → Penjualan → Metode pembayaran**. Tunai selalu aktif; QRIS, Transfer dan E-wallet awalnya nonaktif dan dapat diaktifkan sendiri-sendiri. Simpan satu kali, lalu muat ulang untuk memastikan pilihan tersimpan di perangkat. Ini pencatatan manual setelah owner memastikan pembayaran di layanan eksternal berhasil; Berrie tidak menghubungi penyedia.
+
+Contoh dari UI normal: buat kategori Minuman, menu Kopi Rp10.000 stok 10, buka kas dengan uang awal Rp100.000. Simpan draft A dua Kopi: stok tetap 10 dan saldo laci Rp100.000. Buka lagi A, pilih **Bayar → QRIS**, isi Catatan bila perlu dan centang **Pembayaran sudah saya verifikasi berhasil**. Sebelum dicentang, Simpan pembayaran tidak aktif. Setelah commit, A lunas Rp20.000, stok 8, saldo laci tetap Rp100.000, dan pekerjaan penyerahan masih 0/2. Untuk B satu Kopi, pilih **Bayar nanti**: stok 7. Dari detail B pilih **Lanjutkan ke bayar → Transfer**, verifikasi dan simpan Rp10.000. Stok dan saldo laci tetap. Selesaikan penyerahan A/B di Pesanan; sebelum itu Kas menahan penutupan. Hitung fisik Rp100.000 pada form buta, selisih nol, tutup sekali. Buka ulang dengan PIN, periksa ringkasan Kas dan detail kedua pembayaran di Riwayat. Menonaktifkan metode sesudahnya tidak mengubah Payment lama.
+
+Jika keberhasilan eksternal belum pasti, biarkan pesanan belum bayar. Bila pencatatan memberi hasil belum pasti, gunakan **Periksa hasil** atau **Coba lagi** pada intent yang sama; jangan meminta pembayaran kedua. Receipt lokal membuktikan pencatatan, bukan verifikasi penyedia, kertas tercetak, ACK server atau backup. Hanya draft tersimpan dan batch pertama Toko yang dicakup; Rp0, batch tambahan, koreksi/refund, staf, transport printer dan sync tetap pekerjaan MVP terpisah.
+
+Pemeriksaan produksi lokal memerlukan Supabase/Edge/Mailpit sesuai bagian konfigurasi di bawah. Jalankan `npm run test:pwa:e2e -- pwa-e2e/owner-noncash.spec.ts pwa-e2e/owner-cold-start.spec.ts` dari `foundation/app` setelah `npm run build`; konfigurasi PWA memakai port 5173. Tes dev `npm run test:access:e2e -- flow-e2e/first-cash-sale.spec.ts flow-e2e/owner-shift-close.spec.ts` memakai port yang sama, jadi jalankan berurutan. Tes fisik printer, keamanan, restore, UT peserta dan gerbang pilot belum digantikan oleh E2E ini.
+
 ## FLOW-01A — akses owner (bukti parsial)
 
 ## FLOW-01B — coba transaksi tunai owner
@@ -15,7 +25,7 @@ Key privat dan service role hanya untuk server; jangan masukkan ke `VITE_` atau 
 
 ## Pembayaran tunai batch pertama (internal)
 
-`payConfirmedFirstBatchCash(db, {orderId, expectedBatchRevision, expectedSessionRevision, received}, metadata)` mencatat uang yang benar-benar diterima untuk seluruh unit batch pertama confirmed, baik belum, sebagian, maupun seluruhnya disajikan. Jumlah harus positif dan `received` integer rupiah aman minimal tagihan; kembalian adalah selisih, dan ledger `sale` menambah kas sebesar tagihan. Pembayaran langsung untuk order platform juga memakai Payment biasa; tagihan platform tidak dibuat. API ini tidak menangani draft belum confirmed; jalur tunai draft dijelaskan di bawah. Jalur Rp0 internal dijelaskan di bawah; batch tambahan dan metode lain belum ditangani.
+`payConfirmedFirstBatchCash(db, {orderId, expectedBatchRevision, expectedSessionRevision, received}, metadata)` mencatat uang yang benar-benar diterima untuk seluruh unit batch pertama confirmed, baik belum, sebagian, maupun seluruhnya disajikan. Jumlah harus positif dan `received` integer rupiah aman minimal tagihan; kembalian adalah selisih, dan ledger `sale` menambah kas sebesar tagihan. Pembayaran langsung untuk order platform juga memakai Payment biasa; tagihan platform tidak dibuat. API ini tidak menangani draft belum confirmed; jalur tunai draft dijelaskan di bawah. Jalur Rp0 internal dijelaskan di bawah; batch tambahan dan metode lain di luar irisan FLOW-01D belum ditangani.
 
 Command menyalin intent sebelum Web Lock, memeriksa receipt dahulu, lalu membaca ulang batch, sesi, revisi dan histori di transaksi IndexedDB. Snapshot harga, promo dan tarif berasal dari batch; kalkulasi serta alokasi menggunakan domain bersama. Settlement, Payment, penerimaan penjualan, job pelanggan berisi snapshot batch/settlement/payment, audit, outbox, receipt dan sequence disimpan atomik. Sesi direvisi agar seluruh pergerakan kas terurut. Stok, batch, job dapur dan penyajian tidak berubah. Retry harus memakai input dan metadata identik; operation ID sama dengan intent berbeda ditolak. Tidak ada jaringan atau cetak dalam transaksi; job bukan bukti kertas keluar.
 
@@ -112,7 +122,7 @@ Job pelanggan gratis memakai `customer-job` versi 2 yang menyimpan batch, settle
 
 Kedua primitive hanya internal dan belum terhubung UI. Gateway berizin untuk draft dan confirmed dijelaskan pada bagian gateway. `actorId`, `policyVersion` dan alasan bukan bukti izin atau approval: **persetujuan owner untuk gratis dan pemeriksaan identitas/izin/perangkat T-04 wajib sebelum integrasi operasional**. Tidak ada approval palsu. Katalog/ketersediaan, auth/permit, batch tambahan, tutup/serah-terima, sync, transport printer dan aktivasi restore tetap di luar cakupan command gratis; non-tunai dan refund served dijelaskan di bawah. Bukti lokal parsial AC-09/10/20/28/30/39/48/151 tidak meluluskan seluruh AC atau pilot.
 
-### Pembayaran non-tunai manual internal
+### Primitive pembayaran non-tunai manual dan integrasi owner
 
 `readPaymentMethods(db, storeId)` mengembalikan konfigurasi dan revisi (`null` bila belum ada); default QRIS, transfer dan e-wallet semuanya nonaktif. Tunai tetap tersedia. `setPaymentMethods(db, {expectedRevision, qris, transfer, ewallet}, metadata)` membuat atau mengganti konfigurasi toko melalui audit, outbox, receipt dan sequence atomik. Primitive ini tetap internal; gunakan gateway berizin di bawah sebelum integrasi.
 
@@ -120,7 +130,7 @@ Kedua primitive hanya internal dan belum terhubung UI. Gateway berizin untuk dra
 
 Draft mengonfirmasi batch pertama, mendebit semua unit fisik sekali dan menyimpan job dapur lalu pelanggan dalam commit yang sama. Batch confirmed tidak mendebit lagi dan hanya membuat job pelanggan, termasuk bila stok sekarang nol. Tidak ada ledger uang atau perubahan saldo laci; penyajian terpisah. Konfigurasi, sesi asal, toko dan revisi sumber dibaca ulang dalam transaksi. Input disalin sebelum Web Lock dan receipt diperiksa lebih dulu; simpan intent serta metadata identik untuk retry, sebab ID sama dengan intent berbeda ditolak. Menonaktifkan metode tidak membatalkan histori atau replay yang sah.
 
-Record dan receipt baru divalidasi pada commit, checkpoint dan staging terhadap sumber historis; kontrak lama dan record generik tetap dipertahankan. Staging bukan restore produksi dan konsistensi bukan autentisitas checkpoint. API hanya internal: T-04 dan otorisasi owner untuk konfigurasi wajib sebelum integrasi; tidak ada auth/approval palsu. Belum ada UI, gateway, piutang platform, batch tambahan, sync, transport printer atau aktivasi restore; refund served internal dijelaskan di bawah. Job bukan bukti kertas tercetak.
+Record dan receipt baru divalidasi pada commit, checkpoint dan staging terhadap sumber historis; kontrak lama dan record generik tetap dipertahankan. Staging bukan restore produksi dan konsistensi bukan autentisitas checkpoint. Primitive ini tetap internal; `AuthorizedPayments` dan `OwnerCashier` menghubungkannya ke UI owner dengan PIN/permit normal pada FLOW-01D. Tidak ada approval palsu. Piutang platform, batch tambahan, sync, transport printer dan aktivasi restore tetap terbuka; refund served internal dijelaskan di bawah. Job bukan bukti kertas tercetak.
 
 ### Koreksi metode pembayaran pada sesi asal
 
