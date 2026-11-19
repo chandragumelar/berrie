@@ -7,7 +7,7 @@ import type { OperationRow, RecordRow } from './database';
 import type { Snapshot } from './recovery';
 
 type Version={change:AtomicChange;revision:number;value:unknown};
-const orderKinds=new Set(['draft.create','draft.update','draft.cancel','batch.confirm-first','payment.draft-cash','payment.confirmed-cash','payment.draft-noncash','payment.confirmed-noncash','settlement.draft-free','settlement.confirmed-free','serving.serve','serving.correct','payment.correct-method','payment.adjust-closed-method','refund.served','refund.return-stock','cancellation.paid','refund.cancelled','cancellation.refund-paid','cancellation.return-stock','cancellation.free','return.free','cancellation.unpaid','return.unpaid']);
+const orderKinds=new Set(['draft.create','draft.update','draft.cancel','batch.confirm-first','payment.draft-cash','payment.confirmed-cash','payment.multi-batch-cash','payment.draft-noncash','payment.confirmed-noncash','settlement.draft-free','settlement.confirmed-free','serving.serve','serving.correct','payment.correct-method','payment.adjust-closed-method','refund.served','refund.return-stock','cancellation.paid','refund.cancelled','cancellation.refund-paid','cancellation.return-stock','cancellation.free','return.free','cancellation.unpaid','return.unpaid']);
 const typed=(v:unknown)=>v && typeof v==='object' && 'recordType' in v?v as BusinessRecord:undefined;
 const stream=(c:AtomicChange)=>JSON.stringify([c.storeId,c.deviceId,c.deviceEpoch]);
 /** A legacy generic record can use any kind without opting into the new contract. */

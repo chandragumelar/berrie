@@ -2,6 +2,10 @@
 
 ## FLOW-01D · pembayaran non-tunai manual owner
 
+## FLOW-01E · tambahan + tunai (irisan berjalan)
+
+`AuthorizedPayments.payAdditionsCash` menerima item baru saja dan, setelah sumber katalog/stok/sesi diverifikasi dalam transaksi penulis, menyimpan batch 2, debit stok unit baru, satu Payment/settlement seluruh order dan ledger sale sebesar tagihan. Tidak ada cetak atau jaringan di transaksi. Cakupan saat ini terbatas ke Toko sederhana, harga positif tanpa promo/modifier/tarif; batch ≥3, non-tunai tambahan, refund/return, printer, sync/restore dan bukti E2E tetap di luar irisan.
+
 Pada perangkat kasir aktif, owner membuka **Pengaturan → Penjualan → Metode pembayaran**. Tunai selalu aktif; QRIS, Transfer dan E-wallet awalnya nonaktif dan dapat diaktifkan sendiri-sendiri. Simpan satu kali, lalu muat ulang untuk memastikan pilihan tersimpan di perangkat. Ini pencatatan manual setelah owner memastikan pembayaran di layanan eksternal berhasil; Berrie tidak menghubungi penyedia.
 
 Contoh dari UI normal: buat kategori Minuman, menu Kopi Rp10.000 stok 10, buka kas dengan uang awal Rp100.000. Simpan draft A dua Kopi: stok tetap 10 dan saldo laci Rp100.000. Buka lagi A, pilih **Bayar → QRIS**, isi Catatan bila perlu dan centang **Pembayaran sudah saya verifikasi berhasil**. Sebelum dicentang, Simpan pembayaran tidak aktif. Setelah commit, A lunas Rp20.000, stok 8, saldo laci tetap Rp100.000, dan pekerjaan penyerahan masih 0/2. Untuk B satu Kopi, pilih **Bayar nanti**: stok 7. Dari detail B pilih **Lanjutkan ke bayar → Transfer**, verifikasi dan simpan Rp10.000. Stok dan saldo laci tetap. Selesaikan penyerahan A/B di Pesanan; sebelum itu Kas menahan penutupan. Hitung fisik Rp100.000 pada form buta, selisih nol, tutup sekali. Buka ulang dengan PIN, periksa ringkasan Kas dan detail kedua pembayaran di Riwayat. Menonaktifkan metode sesudahnya tidak mengubah Payment lama.
