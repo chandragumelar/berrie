@@ -425,7 +425,9 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
      if(prior)edge(prior.change.operationId,c.operationId);const next=versions.find(x=>x.revision===(rev ?? -1)+1);if(next)edge(c.operationId,next.change.operationId);
      refundSource={revision:rev ?? null,unitIds:record?.recordType==='served-refunds'?record.refunds.flatMap(r=>r.units.map(u=>u.id)):[]};
     }
-    if(canonical(c)!==canonical(makeServingChange(batch.batch,before,p.data,p.metadata,action as ServingAction,p.sessionSource,refundSource))) throw new Error('Histori penyajian tidak sesuai');
+    const addition=typed(byKey.get(`order-batch:${c.targetId}:2`)?.find(x=>x.revision===0)?.value);
+    if(addition && addition.recordType!=='order-batch') throw new Error('Sumber batch tambahan tidak sah');
+    if(canonical(c)!==canonical(makeServingChange(batch.batch,before,p.data,p.metadata,action as ServingAction,p.sessionSource,refundSource,addition?.recordType==='order-batch'?addition.batch:null))) throw new Error('Histori penyajian tidak sesuai');
     previous=current;continue;
    }
    if(current.recordType==='first-batch' || current.recordType==='kitchen-job') {

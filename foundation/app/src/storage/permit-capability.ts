@@ -45,19 +45,20 @@ async function storedUnitBefore(db:BerrieDatabase,storeId:string,unit:{orderId:s
 export function storedUnitBeforeSnapshot(snapshot:Snapshot,storeId:string,unit:{orderId:string;unitId:string},expiry:number):boolean {
  if(!unit || typeof unit.orderId!=='string' || typeof unit.unitId!=='string') return false;
  const batch=snapshot.state.find(x=>x.key===`first-batch:${unit.orderId}`);
- const row=batch ?? snapshot.state.find(x=>x.key===`draft:${unit.orderId}`);
+ const addition=snapshot.state.find(x=>x.key===`order-batch:${unit.orderId}:2`);
+ const row=batch ?? addition ?? snapshot.state.find(x=>x.key===`draft:${unit.orderId}`);
  if(!row) return false;
  validateBusinessRecord(row.value);
  const value=row.value as BusinessRecord;
- const draft=value.recordType==='first-batch' && value.batch.storeId===storeId ? value.batch.draft : value.recordType==='draft' ? value.draft : null;
+ const draft=(value.recordType==='first-batch'||value.recordType==='order-batch') && value.batch.storeId===storeId ? value.batch.draft : value.recordType==='draft' ? value.draft : null;
  if(!draft || draft.orderId!==unit.orderId || !draft.items.some(i=>i.unitIds.includes(unit.unitId))) return false;
  // The current record must be backed by a receipt for this store, not a caller-supplied age.
  const changes=snapshot.receipts.map(receipt=>JSON.parse(receipt.payload) as AtomicChange).filter(change=>change.storeId===storeId);
  if(!changes.some(change=>change.state.some(s=>s.key===row.key && canonical(s.value)===canonical(row.value)))) return false;
  return changes.some(change=>change.state.some(s=>{
-  if(s.key!==`draft:${unit.orderId}` && s.key!==`first-batch:${unit.orderId}`) return false;
+  if(s.key!==`draft:${unit.orderId}` && s.key!==`first-batch:${unit.orderId}` && s.key!==`order-batch:${unit.orderId}:2`) return false;
   validateBusinessRecord(s.value);const record=s.value as BusinessRecord;
-  const savedDraft=record.recordType==='draft'?record.draft:record.recordType==='first-batch' && record.batch.storeId===storeId?record.batch.draft:null;
+  const savedDraft=record.recordType==='draft'?record.draft:(record.recordType==='first-batch'||record.recordType==='order-batch') && record.batch.storeId===storeId?record.batch.draft:null;
   if(!savedDraft || savedDraft.orderId!==unit.orderId || !savedDraft.items.some(i=>i.unitIds.includes(unit.unitId))) return false;
   const saved=Date.parse(savedDraft.savedAt);return Number.isFinite(saved) && saved<expiry;
  }));

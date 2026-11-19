@@ -21,15 +21,18 @@ export async function readAdditionSources(db:BerrieDatabase,storeId:string,order
     if(firstRecord?.recordType!=='first-batch'||firstRecord.batch.storeId!==storeId||firstRecord.batch.draft.orderId!==orderId) throw new Error('Batch pertama tidak ditemukan');
     const headRow=await db.state.get(additionsKey(orderId));validateBusinessRecord(headRow?.value);
     const headRecord=headRow?.value as BusinessRecord|undefined;
+    if(headRow && headRecord?.recordType!=='order-additions') throw new Error('Head tambahan tidak sah');
     const additions:OrderAdditions=headRecord?.recordType==='order-additions'?headRecord.additions:{storeId,orderId,cashSessionId:firstRecord.batch.draft.cashSessionId,batchCount:1,pending:[]};
     if(additions.storeId!==storeId||additions.orderId!==orderId||additions.cashSessionId!==firstRecord.batch.draft.cashSessionId) throw new Error('Head tambahan tidak sesuai');
     const batches:AdditionalBatch[]=[];
     for(let number=2;number<=additions.batchCount;number++){
       const row=await db.state.get(additionalBatchKey(orderId,number));validateBusinessRecord(row?.value);
       const record=row?.value as BusinessRecord|undefined;
-      if(record?.recordType!=='order-batch'||record.batch.number!==number||record.batch.storeId!==storeId||record.batch.orderId!==orderId) throw new Error('Sumber batch tambahan tidak lengkap');
+      if(record?.recordType!=='order-batch'||record.batch.number!==number||record.batch.storeId!==storeId||record.batch.orderId!==orderId||record.batch.cashSessionId!==additions.cashSessionId) throw new Error('Sumber batch tambahan tidak lengkap');
       batches.push(structuredClone(record.batch));
     }
+    const rows=await db.state.where('key').startsWith(`order-batch:${orderId}:`).toArray();
+    if(rows.length!==batches.length) throw new Error('Batch tambahan asing');
     const allUnits=[...firstRecord.batch.draft.items.flatMap(item=>item.unitIds),...batches.flatMap(batch=>batch.draft.items.flatMap(item=>item.unitIds)),...additions.pending.flatMap(item=>item.unitIds)];
     if(new Set(allUnits).size!==allUnits.length) throw new Error('Unit pesanan dipakai ulang');
     return {first:structuredClone(firstRecord.batch.draft),additions:structuredClone(additions),additionsRevision:headRow?.revision??null,batches};
