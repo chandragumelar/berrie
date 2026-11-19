@@ -13,6 +13,7 @@ import { validateFirstBatch, type FirstBatch } from './first-batch';
 import { validateDraft, type OrderDraft } from './draft';
 import { validateRefundHistory, validateSettlementSnapshot, type RefundRecord, type SettlementSnapshot } from './settlement';
 import { validateServedRefundEvent, validateStockReturnEvent, type ServedRefundEvent, type StockReturnEvent } from './served-refund';
+import { validateAdditionalBatch, validateOrderAdditions, type AdditionalBatch, type OrderAdditions } from './order-additions';
 
 export const SETTLEMENT_RECORD = 'settlement' as const;
 export const REFUND_HISTORY_RECORD = 'refund-history' as const;
@@ -46,6 +47,9 @@ export type BusinessRecord =
  | { recordType:'cash-session'; schemaVersion:1; session:CashSession }
  | { recordType:'first-batch'; schemaVersion:1|2; batch:FirstBatch }
  | { recordType:'kitchen-job'; schemaVersion:1|2; batch:FirstBatch }
+ | { recordType:'order-additions'; schemaVersion:1; additions:OrderAdditions }
+ | { recordType:'order-batch'; schemaVersion:1; batch:AdditionalBatch }
+ | { recordType:'kitchen-job-addition'; schemaVersion:1; batch:AdditionalBatch }
  | { recordType:'sku-stock-mapping'; schemaVersion:1; mapping:SkuStockMapping }
  | { recordType: typeof STOCK_GROUP_RECORD; schemaVersion: 1; stockGroup: StockGroup }
  | { recordType: typeof DRAFT_RECORD; schemaVersion: 1|2; draft: OrderDraft }
@@ -78,6 +82,8 @@ export function validateBusinessRecord(value: unknown): void {
   if (Object.keys(record).sort().join(',') !== 'batch,recordType,schemaVersion') throw new Error('Record batch tidak sah');
   validateFirstBatch(record.batch);
  }
+ else if (record.recordType === 'order-additions') { if(Object.keys(record).sort().join(',')!=='additions,recordType,schemaVersion') throw new Error('Head tambahan tidak sah');validateOrderAdditions(record.additions); }
+ else if (record.recordType === 'order-batch' || record.recordType === 'kitchen-job-addition') { if(Object.keys(record).sort().join(',')!=='batch,recordType,schemaVersion') throw new Error('Record batch tambahan tidak sah');validateAdditionalBatch(record.batch); }
  else if (record.recordType === 'sku-stock-mapping') validateSkuStockMapping(record.mapping);
  else if (record.recordType === STOCK_GROUP_RECORD) validateStockGroup(record.stockGroup);
  else if (record.recordType === DRAFT_RECORD) validateDraft(record.draft);

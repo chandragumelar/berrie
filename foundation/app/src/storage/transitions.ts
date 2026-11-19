@@ -574,6 +574,11 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
     if(i>0 && !previous) throw new Error('Record generik bukan draft');
     previous=current; continue;
    }
+   // New addition records are never interpreted as a settlement/refund.  The
+   // dedicated transition branch is added together with the mutating command;
+   // this guard keeps old checkpoint validation type-safe in the meantime.
+   if(current.recordType==='order-additions' || current.recordType==='order-batch' || current.recordType==='kitchen-job-addition') { previous=current;continue; }
+   if(current.recordType!=='settlement' && current.recordType!=='refund-history') throw new Error('Record bisnis tidak didukung');
    const identity=JSON.stringify([owner,current.settlement.orderId]);
    if(current.recordType==='settlement' && ['payment.confirmed-cash','payment.draft-cash'].includes(v.change.kind) && (key!==`settlement:${current.settlement.orderId}` || v.revision!==0 || !v.change.state.some(row=>row.key.startsWith('cash-session:') && typed(row.value)?.recordType==='cash-session'))) throw new Error('Settlement pembayaran tidak sah');
    if(previous && (previous.recordType==='settlement' || previous.recordType==='refund-history') && canonical(current.settlement)!==canonical(previous.settlement)) throw new Error('Settlement immutable');
