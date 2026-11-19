@@ -21,6 +21,13 @@ export class AccessController {
  private set(change:Partial<AccessState>):void { this.state={...this.state,...change}; this.notify(this.state); }
  private disposeSecurity():void { this.cashierFacade?.invalidate();this.cashierFacade=null;this.stopActivity?.(); this.stopActivity=null; if(this.monitor!==null) window.clearInterval(this.monitor); this.monitor=null; this.security?.close(); this.permits?.close(); this.business?.close(); this.security=null;this.permits=null;this.business=null; }
  cashier():OwnerCashier {if(!this.cashierFacade||!this.state.grant||!['unlocked','limited'].includes(this.state.screen))throw new Error('Kasir terkunci');return this.cashierFacade;}
+ async offlineReady():Promise<boolean> {
+  if(this.state.screen!=='unlocked'||!this.state.grant||!this.security||!this.permits||!this.business||!this.cashierFacade) return false;
+  const decision=await evaluatePermit(this.permits,this.security,this.state.grant.identity,this.business,'read');
+  if(!decision.allowed || decision.status!=='normal') return false;
+  await this.cashierFacade.view();
+  return true;
+ }
  dispose():void { this.disposeSecurity();this.enrollments.close(); }
  private async openGrant(row:Enrollment):Promise<AccessGrant> {
   if(!row.grant) throw new Error('Grant belum tersedia');

@@ -5,18 +5,24 @@ import { importPermitKeys } from './contracts';
 import { AccessApi } from './access-api';
 import { EnrollmentStore } from './enrollment-store';
 import { OperationalShell } from '../app/OperationalShell';
+import { checkAppShell, subscribeShell, type ShellStatus } from '../pwa/app-shell';
 import './access.css';
 
 export function AccessRoot() {
  const [controller,setController]=useState<AccessController|null>(null), [state,setState]=useState<AccessState>({screen:'config-error',error:null,busy:false,grant:null,decision:null,email:'',canRenew:false});
  const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[register,setRegister]=useState(false),[name,setName]=useState(''),[zone,setZone]=useState<'Asia/Jakarta'|'Asia/Makassar'|'Asia/Jayapura'>('Asia/Jakarta'),[pin,setPin]=useState(''),[confirm,setConfirm]=useState('');
+ const [shell,setShell]=useState<ShellStatus>({kind:'checking',reason:'Memeriksa paket aplikasi…',waiting:false,buildId:null}),[dataReady,setDataReady]=useState(false),[dataError,setDataError]=useState('');
+ useEffect(()=>subscribeShell(setShell),[]);
+ useEffect(()=>{let active=true;const check=async()=>{if(!controller||state.screen!=='unlocked'||shell.kind!=='ready'){if(active)setDataReady(false);return;}try{const ready=await controller.offlineReady();if(active){setDataReady(ready);setDataError(ready?'':'Izin atau data lokal belum siap untuk offline.');}}catch(e){if(active){setDataReady(false);setDataError(e instanceof Error?e.message:'Data lokal belum dapat dibaca.');}}};void check();const timer=window.setInterval(()=>{void check();},30000);return()=>{active=false;window.clearInterval(timer);};},[controller,state.screen,state.grant,shell.kind]);
  useEffect(()=>{ let active=true; let instance:AccessController|undefined;
   void (async()=>{try {const url=import.meta.env.VITE_SUPABASE_URL as string,key=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, keys=await importPermitKeys(import.meta.env.VITE_BERRIE_PERMIT_PUBLIC_KEYS as string); const client=createAccessClient(url,key); instance=new AccessController(client,new AccessApi(client,url,key,keys),keys,new EnrollmentStore(),s=>{if(active)setState(s);}); if(!active){instance.dispose();return;} setController(instance); await instance.start();} catch {if(active)setState(s=>({...s,screen:'config-error',error:'Konfigurasi akses belum lengkap atau tidak sah.'}));}})();
   return ()=>{active=false;instance?.dispose();};
  },[]);
  const submit=(fn:()=>Promise<void>)=>(event:FormEvent)=>{event.preventDefault();void fn();};
- if((state.screen==='unlocked'||state.screen==='limited') && controller && state.grant) return <OperationalShell controller={controller} state={state}/>;
+ const shellNotice=<div role="status" className="notice">{dataReady&&shell.kind==='ready'?'Siap offline':state.screen==='limited'?'Izin terbatas · belum siap offline':shell.reason}{dataError&&<p>{dataError}</p>}{shell.waiting&&<p>Pembaruan tersedia. Selesaikan pekerjaan di semua tab, periksa hasil yang belum pasti, lalu tutup semua tab Berrie dan buka lagi.</p>}{state.screen==='locked'&&!state.busy&&<button type="button" onClick={()=>void checkAppShell(true)}>Coba lagi / cek pembaruan</button>}</div>;
+ if((state.screen==='unlocked'||state.screen==='limited') && controller && state.grant) return <OperationalShell controller={controller} state={state} shellNotice={shellNotice}/>;
  return <main className="access"><section className="card"><div className="brand">Berrie</div>
+ {shellNotice}
  {state.error && <p className="notice" role="alert">{state.error}</p>}
  {state.screen==='config-error' && <><h1>Akses belum siap</h1><p>Periksa konfigurasi aplikasi.</p></>}
  {state.screen==='signed-out' && <><h1>{register?'Daftar akun':'Masuk'}</h1><form onSubmit={submit(()=>controller!.authenticate(email,password,register))}><label>Email<input type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Kata sandi<input type="password" autoComplete={register?'new-password':'current-password'} required value={password} onChange={e=>setPassword(e.target.value)}/></label><button className="primary" disabled={state.busy || !controller}>{state.busy?'Memproses…':register?'Daftar':'Masuk'}</button></form><button className="link" onClick={()=>setRegister(!register)}>{register?'Sudah punya akun? Masuk':'Belum punya akun? Daftar'}</button></>}

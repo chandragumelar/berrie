@@ -5,13 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "build": "tsc --noEmit && vite build && node scripts/build-app-shell.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run src",
     "test:browser": "playwright test",
     "test:access:integration": "vitest run integration/access.test.ts",
-    "test:access:e2e": "playwright test -c playwright.access.config.ts"
+    "test:access:e2e": "playwright test -c playwright.access.config.ts",
+    "test:pwa:e2e": "playwright test -c playwright.pwa.config.ts",
+    "test:pwa:lifecycle": "playwright test -c playwright.pwa.config.ts --grep 'app shell|cache aktif'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
