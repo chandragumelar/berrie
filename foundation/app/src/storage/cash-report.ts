@@ -19,11 +19,11 @@ export async function readInternalCashReport(db:BerrieDatabase,storeId:string,se
  const session=record.session,history=snapshot.state.find(r=>r.key===`cash-count:${sessionId}`)?.value as {history?:CashCountHistory}|undefined;
  const changes=snapshot.receipts.map(r=>JSON.parse(r.payload) as AtomicChange);
  const movements=cashMovements(changes,sessionId);
- const cashKinds=new Set(['cash.open','cash.move','payment.draft-cash','payment.confirmed-cash','payment.correct-method','payment.adjust-closed-method','refund.served','refund.cancelled','cancellation.refund-paid']);
+ const cashKinds=new Set(['cash.open','cash.move','payment.draft-cash','payment.confirmed-cash','payment.multi-batch-cash','payment.correct-method','payment.adjust-closed-method','refund.served','refund.cancelled','cancellation.refund-paid']);
  const relevant=changes.filter(c=>cashKinds.has(c.kind) && c.state.some(s=>s.key===`cash-session:${sessionId}`) && c.ledger.length && c.ledger[0].value && typeof c.ledger[0].value==='object' && 'kind' in c.ledger[0].value && ['opening','in','out','sale','refund','method-correction','method-adjustment'].includes((c.ledger[0].value as {kind:string}).kind)).sort((a,b)=>(a.state.find(s=>s.key===`cash-session:${sessionId}`)!.expectedRevision ?? -1)-(b.state.find(s=>s.key===`cash-session:${sessionId}`)!.expectedRevision ?? -1));
  if(relevant.length!==movements.length) throw new Error('Ledger sesi tidak sesuai');
  const incomplete=sessionCloseBlockers(snapshot,storeId,sessionId).incomplete;
- const supported=new Set(['cash.open','cash.move','cash-count.save','cash-count.revise','cash-count.cancel','cash-count.handover','cash-count.close','payment.draft-cash','payment.confirmed-cash','payment.correct-method','payment.adjust-closed-method','refund.served','refund.cancelled','cancellation.refund-paid']);
+ const supported=new Set(['cash.open','cash.move','cash-count.save','cash-count.revise','cash-count.cancel','cash-count.handover','cash-count.close','payment.draft-cash','payment.confirmed-cash','payment.multi-batch-cash','payment.correct-method','payment.adjust-closed-method','refund.served','refund.cancelled','cancellation.refund-paid']);
  for(const c of changes.filter(c=>c.state.some(s=>s.key===`cash-session:${sessionId}`))) if(!supported.has(c.kind)) incomplete.push({key:c.operationId,reason:'Operasi sesi belum didukung'});
  incomplete.sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:a.reason<b.reason?-1:a.reason>b.reason?1:0);
  const ledger:CashReportEntry[]=relevant.map(c=>{

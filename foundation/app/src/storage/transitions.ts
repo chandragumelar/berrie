@@ -347,7 +347,7 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
    if(v.change.storeId!==owner) throw new Error('Toko record berubah');
    if(v.change.kind==='payment.multi-batch-cash') {
     const p=v.change.payload as {data?:{orderId?:string};contractVersion?:number};
-    if(p?.contractVersion!==1||p.data?.orderId!==v.change.targetId||v.change.state.some(row=>typed(row.value)?.recordType==='order-additions'&&row.key!==`order-additions:${v.change.targetId}`)||v.change.state.some(row=>typed(row.value)?.recordType==='order-batch'&&row.key!==`order-batch:${v.change.targetId}:2`)||v.change.state.some(row=>typed(row.value)?.recordType==='kitchen-job-addition'&&row.key!==`kitchen-job:${v.change.targetId}:2`)) throw new Error('Histori tambahan tunai tidak sah');
+    if(p?.contractVersion!==2||p.data?.orderId!==v.change.targetId||v.change.state.some(row=>typed(row.value)?.recordType==='order-additions'&&row.key!==`order-additions:${v.change.targetId}`)||v.change.state.some(row=>typed(row.value)?.recordType==='order-batch'&&row.key!==`order-batch:${v.change.targetId}:2`)||v.change.state.some(row=>typed(row.value)?.recordType==='kitchen-job-addition'&&row.key!==`kitchen-job:${v.change.targetId}:2`)) throw new Error('Histori tambahan tunai tidak sah');
     previous=current;continue;
    }
    if(current.recordType==='simple-catalog') {if(key!==`catalog:${owner}`||!['catalog.category-create','catalog.simple-create'].includes(v.change.kind)||current.catalog.storeId!==owner){throw new Error('Histori katalog tidak sah');}previous=current;continue;}
@@ -425,7 +425,11 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
      if(prior)edge(prior.change.operationId,c.operationId);const next=versions.find(x=>x.revision===(rev ?? -1)+1);if(next)edge(c.operationId,next.change.operationId);
      refundSource={revision:rev ?? null,unitIds:record?.recordType==='served-refunds'?record.refunds.flatMap(r=>r.units.map(u=>u.id)):[]};
     }
-    const addition=typed(byKey.get(`order-batch:${c.targetId}:2`)?.find(x=>x.revision===0)?.value);
+    const additionSource=byKey.get(`order-batch:${c.targetId}:2`)?.find(x=>x.revision===0);
+    // A later addition must not be projected into an earlier serving receipt.
+    // Batch two is part of this serving snapshot only when it had already
+    // been committed in the same ordered operation stream.
+    const addition=additionSource&&additionSource.change.storeId===c.storeId&&additionSource.change.deviceId===c.deviceId&&additionSource.change.deviceEpoch===c.deviceEpoch&&additionSource.change.localSequence<c.localSequence?typed(additionSource.value):undefined;
     if(addition && addition.recordType!=='order-batch') throw new Error('Sumber batch tambahan tidak sah');
     if(canonical(c)!==canonical(makeServingChange(batch.batch,before,p.data,p.metadata,action as ServingAction,p.sessionSource,refundSource,addition?.recordType==='order-batch'?addition.batch:null))) throw new Error('Histori penyajian tidak sesuai');
     previous=current;continue;

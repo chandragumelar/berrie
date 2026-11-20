@@ -141,8 +141,8 @@ export class OwnerCashier {
  async payAdditionsCash(order:SaleOrder,items:CatalogDraftInput['items'],received:number,opId:string){
   if(order.readOnly||order.phase!=='confirmed'||order.status.settlement!=='unpaid'||!items.length)throw new Error('Pesanan tidak dapat ditambah');
   const view=await this.view();if(!view.cash||view.cash.sessionId!==order.sessionId||view.catalog.revision===null)throw new Error('Sesi atau katalog berubah. Periksa ulang.');
-  const current=view.orders.find(x=>x.id===order.id);if(!current||current.batchRevision!==order.batchRevision||current.servingRevision!==order.servingRevision||current.phase!==order.phase)throw new Error('Pesanan berubah. Periksa ulang.');
-  const intent={kind:'additions-cash' as const,input:{orderId:order.id,expectedBatchRevision:order.batchRevision!,expectedServingRevision:order.servingRevision,expectedSessionRevision:view.cash.revision,expectedCatalogRevision:view.catalog.revision,expectedTotal:order.total+items.reduce((n,i)=>n+i.expectedUnitPrice*i.unitIds.length,0),received,items}};
+  const current=view.orders.find(x=>x.id===order.id);if(!current||current.phase!=='confirmed'||current.status.settlement!=='unpaid'||current.batchRevision===null)throw new Error('Pesanan berubah. Periksa ulang.');
+  const intent={kind:'additions-cash' as const,input:{orderId:current.id,expectedBatchRevision:current.batchRevision,expectedServingRevision:current.servingRevision,expectedSessionRevision:view.cash.revision,expectedCatalogRevision:view.catalog.revision,expectedTotal:current.total+items.reduce((n,i)=>n+i.expectedUnitPrice*i.unitIds.length,0),received,items}};
   return this.run(intent,opId,op=>this.payments.payAdditionsCash(this.grant.identity,intent.input,op));
  }
  private dispatchShift(intent:ShiftIntent,op:Op){const i=this.grant.identity;
