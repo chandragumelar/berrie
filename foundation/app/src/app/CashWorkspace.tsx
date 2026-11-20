@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { OwnerCashier, OwnerView } from '../application/owner-cashier';
 const money=(n:number)=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n);
 type Context=Awaited<ReturnType<OwnerCashier['count']>>;
-const reasons:Record<string,string>={draft:'Draft belum diproses atau dibatalkan',processed:'Barang belum diserahkan',unsettled:'Pembayaran belum diselesaikan',refund_due:'Refund tertunda; aksi refund belum tersedia di UI ini'};
+const reasons:Record<string,string>={draft:'Draft belum diproses atau dibatalkan',processed:'Barang belum diserahkan',unsettled:'Pembayaran belum diselesaikan',refund_due:'Refund tertunda; buka pesanan untuk menyiapkan atau memeriksa pengembalian uang'};
 export function CashWorkspace({service,view,reload,openOrder}:{service:OwnerCashier;view:OwnerView;reload:()=>Promise<void>;openOrder:(id:string)=>void}){
  const [started,setStarted]=useState(false),[context,setContext]=useState<Context|null>(null),[amount,setAmount]=useState(''),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[op,setOp]=useState(crypto.randomUUID());
  useEffect(()=>{let live=true;if(view.cash&&view.countActive){setStarted(true);void service.count(view.cash.sessionId).then(x=>{if(live)setContext(x);}).catch(e=>{if(live)setError(e instanceof Error?e.message:'Hitungan tidak dapat dibaca');});}else setContext(null);return()=>{live=false;};},[service,view.cash?.sessionId,view.countActive]);

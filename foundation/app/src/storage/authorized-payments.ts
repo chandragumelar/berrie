@@ -22,7 +22,7 @@ import type { SettlementSnapshot } from '../domain/settlement';
 import type { PermissionMode } from '../domain/permission-policy';
 import { settleConfirmedFirstBatchFree, validateFreeReason, type ConfirmedFreeInput, type DraftFreeInput } from './free-settlement';
 import { payAdditionsCash, type AdditionsCashInput } from './payment-additions-cash';
-import { cancelPaidUnits as cancelPaid, refundCancelledUnits as refundCancelled, readPaidCancellationStatus as readPaidStatus, type CancelPaidInput, type RefundDueInput } from './paid-cancellations';
+import { cancelPaidUnits as cancelPaid, refundCancelledUnits as refundCancelled, readPaidCancellationStatus as readPaidStatus, previewCancelledRefund, type CancelPaidInput, type RefundDueInput } from './paid-cancellations';
 import { effectivePaymentMethod } from '../domain/payment';
 
 export interface PaymentOperation {operationId:string;localSequence:number;recordedAt:string}
@@ -199,7 +199,19 @@ export class AuthorizedPayments {
    return this.execute(i,async ctx=>{if(ctx.role!=='owner')throw new Error('Hanya owner');const snap=validateCheckpoint(await checkpoint(this.db)),payment=snap.state.find(r=>r.key===`payment:${d.orderId}`)?.value as BusinessRecord|undefined,batch=snap.state.find(r=>r.key===`first-batch:${d.orderId}`)?.value as BusinessRecord|undefined,corrections=snap.state.find(r=>r.key===`payment-corrections:${d.orderId}`)?.value as BusinessRecord|undefined;
     if(payment?.recordType!=='payment'||batch?.recordType!=='first-batch'||payment.payment.storeId!==ctx.storeId||batch.batch.storeId!==ctx.storeId||payment.payment.cashSessionId!==batch.batch.draft.cashSessionId||snap.state.some(r=>r.key===`order-batch:${d.orderId}:2`)||effectivePaymentMethod(payment.payment,corrections?.recordType==='payment-corrections'?corrections.corrections:[])!=='cash')throw new Error('Refund tunai tidak tersedia');
     await requireOrderSession(this.db,ctx.storeId,payment.payment.cashSessionId);const count=snap.state.find(r=>r.key===`cash-count:${payment.payment.cashSessionId}`)?.value as BusinessRecord|undefined;if(count?.recordType==='cash-count'&&['save','revise','close'].includes(count.history.events.at(-1)?.action??''))throw new Error('Sesi kas tidak tersedia');
-    const old=batch.batch.draft.items.every(item=>item.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry)));ctx.guard(old);const value=await refundCancelled(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct);ctx.guard(old);return value;
+    const old=batch.batch.draft.items.every(item=>item.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry)));ctx.guard(old);const value=await refundCancelled(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,()=>ctx.guard(old));ctx.guard(old);return value;
+   });
+  }catch{return Promise.resolve({status:'denied'} as const);}
+ }
+ /** A permitted, no-write checkpoint used for both the affordance and frozen refund command. */
+ preflightCancelledRefund(identityInput:PinIdentity,input:{orderId:string;selection:import('../domain/served-refund').RefundSelection[];reason:string},operation:PaymentOperation) {
+  try {const i=identity(identityInput),d=copyInput(input) as typeof input,o=copyInput(operation) as PaymentOperation;canonical({i,d,o});
+   if(!exact(d,['orderId','reason','selection'])||!id(d.orderId)||typeof d.reason!=='string'||!d.reason.trim()||d.reason.length>500||!Array.isArray(d.selection)||!d.selection.length||!d.selection.every(x=>exact(x,['itemId','quantity'])&&id(x.itemId)&&integer(x.quantity,1))||new Set(d.selection.map(x=>x.itemId)).size!==d.selection.length||!exact(o,['operationId','localSequence','recordedAt'])||!id(o.operationId)||!integer(o.localSequence,1)||typeof o.recordedAt!=='string'||!Number.isFinite(Date.parse(o.recordedAt)))throw new Error('Input tidak sah');
+   return this.execute(i,async ctx=>{if(ctx.role!=='owner')throw new Error('Hanya owner');const snap=validateCheckpoint(await checkpoint(this.db)),payment=snap.state.find(r=>r.key===`payment:${d.orderId}`)?.value as BusinessRecord|undefined,batch=snap.state.find(r=>r.key===`first-batch:${d.orderId}`)?.value as BusinessRecord|undefined,corrections=snap.state.find(r=>r.key===`payment-corrections:${d.orderId}`)?.value as BusinessRecord|undefined;
+    if(payment?.recordType!=='payment'||batch?.recordType!=='first-batch'||payment.payment.storeId!==ctx.storeId||batch.batch.storeId!==ctx.storeId||payment.payment.cashSessionId!==batch.batch.draft.cashSessionId||snap.state.some(r=>r.key===`order-batch:${d.orderId}:2`)||effectivePaymentMethod(payment.payment,corrections?.recordType==='payment-corrections'?corrections.corrections:[])!=='cash')throw new Error('Refund tunai tidak tersedia');
+    await requireOrderSession(this.db,ctx.storeId,payment.payment.cashSessionId);const count=snap.state.find(r=>r.key===`cash-count:${payment.payment.cashSessionId}`)?.value as BusinessRecord|undefined;if(count?.recordType==='cash-count'&&['save','revise','close'].includes(count.history.events.at(-1)?.action??''))throw new Error('Sesi kas tidak tersedia');
+    const old=batch.batch.draft.items.every(item=>item.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry)));ctx.guard(old);
+    const preview=await previewCancelledRefund(this.db,ctx.storeId,{orderId:d.orderId,selection:d.selection,reason:d.reason.trim(),metadata:{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion}});ctx.guard(old);return preview;
    });
   }catch{return Promise.resolve({status:'denied'} as const);}
  }
