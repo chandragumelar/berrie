@@ -1,5 +1,11 @@
 # Fondasi aplikasi Berrie
 
+## FLOW-01F · batal unit lunas tunai dan refund
+
+Untuk order Toko batch pertama yang sudah **Lunas · Tunai** pada sesi kas asal yang masih terbuka, buka **Pesanan** lalu detailnya. Pilih **Batalkan unit**, isi jumlah unit yang belum diserahkan, alasan, centang **Dapur sudah diberi tahu**, dan—bila barang layak jual—pilih pengembalian stok. Pembatalan menyimpan kewajiban **Refund tertunda** tanpa mengubah Payment asal atau saldo laci. Setelah uang benar-benar diberikan, tekan **Catat refund tunai**, siapkan intent, lalu hanya tekan **Uang sudah dikembalikan — catat refund** sesudah konfirmasi owner. Reload saat menunggu akan tetap meminta pemeriksaan uang; jangan memakai retry untuk tahap itu. Kas menahan penutupan sampai refund due nol dan unit lain diserahkan.
+
+Cakupan saat ini hanya owner perangkat kasir aktif, pembayaran tunai efektif positif, batch pertama tunggal dan sesi asal terbuka. Non-tunai, koreksi yang membuat metode efektif bukan tunai, batch tambahan, unit sudah diserahkan, sesi lain/tertutup, staf/approval, printer, sync dan restore produksi ditolak atau belum didukung.
+
 ## FLOW-01D · pembayaran non-tunai manual owner
 
 ## FLOW-01E · tambahan + tunai (irisan berjalan)
