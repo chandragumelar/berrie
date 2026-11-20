@@ -13,7 +13,7 @@ import { combineDraftNoncashChange, draftNoncashBatchPart, makeConfirmedNoncashC
 import { combineDraftCashChange, draftCashBatchPart, type DraftCashInput } from './draft-cash-contract';
 import { makeConfirmedCashPaymentChange, type ConfirmedCashPaymentInput } from './confirmed-cash-payment';
 import { cashBalance, type CashMovement } from '../domain/cash-session';
-import { makeCashChange, type CashMetadata, type MoveCashInput, type OpenCashInput } from './cash-sessions';
+import { cashMovements, makeCashChange, type CashMetadata, type MoveCashInput, type OpenCashInput } from './cash-sessions';
 import { draftDateCode } from '../domain/draft';
 import { planFirstBatch, snapshotBatchDraft, validateFirstBatch } from '../domain/first-batch';
 import type { BusinessRecord } from '../domain/business-record';
@@ -22,6 +22,8 @@ import { canonical } from './commit';
 import type { OperationRow, RecordRow } from './database';
 import { makeServingChange, type ServingAction, type ServingInput, type SessionSource } from './serving';
 import type { StockMetadata } from './stock-groups';
+import { makeAdditionsCashChange, type AdditionsCashInput } from './payment-additions-cash';
+import { makeAdditionalBatch, type OrderAdditions } from '../domain/order-additions';
 
 function typed(value:unknown):BusinessRecord | undefined {
  if(value && typeof value==='object' && Object.hasOwn(value,'recordType')) return value as BusinessRecord;
@@ -241,6 +243,34 @@ export function validateTransitions(receipts:OperationRow[], state:RecordRow[]):
   const next=byKey.get(`cash-session:${sessionId}`)?.find(v=>v.revision===(ref.revision as number)+1);
   if(next) edge(change.operationId,next.change.operationId);
  };
+ // Additions are a complete, single settlement.  Rebuild it from the versions
+ // it names; state array order and today's catalog are never sources of truth.
+ for(const change of changes.filter(c=>c.kind==='payment.multi-batch-cash')) {
+  const p=change.payload as {data:AdditionsCashInput;metadata:StockMetadata;contractVersion:number;sessionSource:{id:string;revision:number};sources:{firstBatchRevision:number;servingRevision:number|null;sessionRevision:number;catalogRevision:number;groups:{groupId:string;revision:number;balance:number}[];mappings:{skuId:string;groupId:string}[]}};
+  if(!p?.data||!p.metadata||p.contractVersion!==2||!p.sessionSource||!p.sources||p.data.orderId!==change.targetId||p.sessionSource.id===undefined||p.sessionSource.revision!==p.data.expectedSessionRevision) throw new Error('Kontrak tambahan tunai tidak sah');
+  const source=(key:string,revision:number|null,type:BusinessRecord['recordType'])=>{const versions=byKey.get(key)??[], row=revision===null?undefined:versions.find(v=>v.revision===revision), record=typed(row?.value);if(revision!==null&&(!row||row.change.storeId!==change.storeId||record?.recordType!==type))throw new Error('Sumber tambahan tidak sah');if(row)edge(row.change.operationId,change.operationId);const next=versions.find(v=>v.revision===(revision??-1)+1);if(next)edge(change.operationId,next.change.operationId);return record;};
+  const first=source(`first-batch:${change.targetId}`,p.sources.firstBatchRevision,'first-batch');
+  const session=first?.recordType==='first-batch'?source(`cash-session:${first.batch.draft.cashSessionId}`,p.sources.sessionRevision,'cash-session'):undefined;
+  const catalog=source(`catalog:${change.storeId}`,p.sources.catalogRevision,'simple-catalog');
+  const serving=source(`serving:${change.targetId}`,p.sources.servingRevision,'serving');
+  if(first?.recordType!=='first-batch'||first.schemaVersion!==2||session?.recordType!=='cash-session'||catalog?.recordType!=='simple-catalog'||(p.sources.servingRevision!==null&&serving?.recordType!=='serving')||first.batch.storeId!==change.storeId||session.session.storeId!==change.storeId||p.sessionSource.id!==session.session.id) throw new Error('Sumber tambahan tidak lengkap');
+  const head:OrderAdditions={storeId:change.storeId,orderId:change.targetId,cashSessionId:session.session.id,batchCount:1,pending:[]};
+  const batchRow=change.state.find(row=>row.key===`order-batch:${change.targetId}:2`), batchRecord=typed(batchRow?.value);
+  if(batchRecord?.recordType!=='order-batch'||batchRow?.expectedRevision!==null||batchRecord.batch.number!==2)throw new Error('Batch tambahan tidak sah');
+  const mappings=p.sources.mappings.map(mapping=>{const record=source(`sku-stock-mapping:${JSON.stringify([change.storeId,mapping.skuId])}`,0,'sku-stock-mapping');if(record?.recordType!=='sku-stock-mapping'||record.mapping.groupId!==mapping.groupId)throw new Error('Pemetaan tambahan tidak sah');return mapping;});
+  if(new Set(mappings.map(m=>m.skuId)).size!==mappings.length)throw new Error('Pemetaan tambahan ganda');
+  const items=p.data.items.map(item=>{const menu=catalog.catalog.menus.find(menu=>menu.skuId===item.skuId&&menu.active);if(!menu||menu.price!==item.expectedUnitPrice)throw new Error('Katalog tambahan tidak sah');return {id:item.itemId,skuId:item.skuId,unitIds:item.unitIds,name:menu.name,skuPrice:menu.price,toppingPrice:0,promo:{kind:'none' as const,revision:0},choices:[],toppings:[],serving:item.serving,note:item.note};});
+  const rebuilt=makeAdditionalBatch(head,first.batch.draft,2,batchRecord.batch.confirmedAt,items,mappings);
+  if(canonical(rebuilt)!==canonical(batchRecord.batch))throw new Error('Snapshot tambahan tidak sesuai sumber');
+  const groups=p.sources.groups.map(group=>{const record=source(`stock-group:${group.groupId}`,group.revision,'stock-group');if(record?.recordType!=='stock-group'||record.stockGroup.balance!==group.balance||record.stockGroup.storeId!==change.storeId)throw new Error('Saldo tambahan tidak sah');return {row:{key:`stock-group:${group.groupId}`,revision:group.revision},stock:record.stockGroup};});
+  if(new Set(groups.map(group=>group.stock.groupId)).size!==groups.length||canonical(groups.map(group=>group.stock.groupId).sort())!==canonical([...new Set(mappings.map(mapping=>mapping.groupId))].sort()))throw new Error('Grup tambahan tidak sesuai');
+  const additionsRow=change.state.find(row=>row.key===`order-additions:${change.targetId}`), additionsRecord=typed(additionsRow?.value);
+  if(additionsRecord?.recordType!=='order-additions'||additionsRow?.expectedRevision!==null)throw new Error('Head tambahan tidak sah');
+  const movementPrefix=changes.filter(other=>other.state.some(row=>row.key===`cash-session:${session.session.id}`&&((row.expectedRevision??-1)+1)<=p.sources.sessionRevision));
+  const before=cashBalance(cashMovements(movementPrefix,session.session.id),session.session);
+  const expected=makeAdditionsCashChange(first.batch,rebuilt,head,serving?.recordType==='serving'?serving.serving:null,session.session,p.data,p.metadata,groups,before);
+  if(canonical(change)!==canonical(expected))throw new Error('Histori tambahan tunai tidak sesuai sumber');
+ }
  for(const change of changes.filter(c=>c.kind==='draft.cancel')) {
   const p=change.payload as {data:CancelDraftInput;metadata:DraftMetadata;contractVersion:number;sessionSource:{id:string;revision:number}};
   if(!p?.data || !p.metadata || p.contractVersion!==2) throw new Error('Kontrak pembatalan draft tidak sah');

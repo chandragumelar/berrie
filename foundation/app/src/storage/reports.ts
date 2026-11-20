@@ -17,7 +17,7 @@ export function validateReportFilter(v:ReportFilter):void {
 }
 function localDate(time:string,zone:string):string {draftDateCode(time,zone);const parts=new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(time));return ['year','month','day'].map(k=>parts.find(p=>p.type===k)!.value).join('-');}
 function selected(filter:ReportFilter,time:string,session:string):boolean {if(filter.kind==='session')return filter.sessionId===session;const date=localDate(time,filter.zone);return date>=filter.start&&date<filter.end;}
-const kinds=new Set(['payment.draft-cash','payment.confirmed-cash','payment.draft-noncash','payment.confirmed-noncash','settlement.draft-free','settlement.confirmed-free']);
+const kinds=new Set(['payment.draft-cash','payment.confirmed-cash','payment.draft-noncash','payment.confirmed-noncash','settlement.draft-free','settlement.confirmed-free','payment.multi-batch-cash']);
 /** Internal read only. T-04 must authorize the caller. */
 export async function readInternalSalesReports(db:BerrieDatabase,storeId:string,filter:ReportFilter) {
  if(!validId(storeId))throw new Error('Toko tidak sah');filter=structuredClone(filter);validateReportFilter(filter);
@@ -29,10 +29,11 @@ export async function readInternalSalesReports(db:BerrieDatabase,storeId:string,
  const incomplete:{key:string;reason:string}[]=[];const sales:Sale[]=[];const refunds:Refund[]=[];const classifications:Classification[]=[];
  for(const r of s.state){const creator=origin(r.key);if(!creator)continue;const v=r.value as BusinessRecord;if(!v||typeof v!=='object'||!('recordType' in v)){incomplete.push({key:r.key,reason:'Record generik belum didukung'});continue;}if(v.recordType==='draft' && (v.schemaVersion!==2 || v.draft.channel!=='store'))incomplete.push({key:r.key,reason:'Draft legacy atau platform belum didukung'});if(v.recordType==='first-batch' && v.schemaVersion!==2)incomplete.push({key:r.key,reason:'Batch legacy belum didukung'});if(v.recordType==='refund-history')incomplete.push({key:r.key,reason:'Histori refund generik belum didukung'});}
  for(const r of s.state){const rec=r.value as BusinessRecord;if(!rec||rec.recordType!=='settlement')continue;const orderId=rec.settlement.orderId,key=r.key,creator=origin(key);if(!creator)continue;
-  const batch=rows.get(`first-batch:${orderId}`),payment=rows.get(`payment:${orderId}`),refund=rows.get(`served-refunds:${orderId}`),correction=rows.get(`payment-corrections:${orderId}`);
+  const batch=rows.get(`first-batch:${orderId}`),addition=rows.get(`order-batch:${orderId}:2`),payment=rows.get(`payment:${orderId}`),refund=rows.get(`served-refunds:${orderId}`),correction=rows.get(`payment-corrections:${orderId}`);
   if(key!==`settlement:${orderId}`||!kinds.has(creator.kind)||batch?.recordType!=='first-batch'||batch.schemaVersion!==2||batch.batch.draft.channel!=='store'||rec.settlement.source==='platform'||(rec.settlement.source==='payment'&&payment?.recordType!=='payment')){incomplete.push({key,reason:'Settlement atau sumber belum didukung'});continue;}
   const time=(creator.payload as {metadata?:{recordedAt?:unknown}})?.metadata?.recordedAt;if(typeof time!=='string'){incomplete.push({key,reason:'Waktu settlement tidak tersedia'});continue;}draftDateCode(time,'UTC');
-  const names:Record<string,string>={};for(const item of batch.batch.draft.items)for(const unit of item.unitIds)names[unit]=item.name;
+  if(creator.kind==='payment.multi-batch-cash' && (addition?.recordType!=='order-batch'||addition.batch.number!==2||addition.batch.orderId!==orderId)) {incomplete.push({key,reason:'Batch tambahan settlement tidak tersedia'});continue;}
+  const names:Record<string,string>={};for(const item of [...batch.batch.draft.items,...(addition?.recordType==='order-batch'?addition.batch.draft.items:[])])for(const unit of item.unitIds)names[unit]=item.name;
   if(rec.settlement.units.some(u=>!names[u.id])){incomplete.push({key,reason:'Nama unit historis tidak tersedia'});continue;}
   const p=payment?.recordType==='payment'?payment.payment:null;const session=batch.batch.draft.cashSessionId;const source={orderId,settlementId:key,paymentId:p?.id??null,operationId:creator.operationId,settlementOperationId:creator.operationId,recordedAt:time,cashSessionId:session};
   if(selected(filter,time,session))sales.push({source,settlement:rec.settlement,names,method:p?.method??null});

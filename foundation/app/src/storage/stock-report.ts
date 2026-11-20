@@ -5,7 +5,7 @@ import type { BerrieDatabase } from './database';
 import { checkpoint } from './recovery';
 import { validateCheckpoint } from './validate-checkpoint';
 
-const debits=new Set(['batch.confirm-first','payment.draft-cash','payment.draft-noncash','settlement.draft-free']);
+const debits=new Set(['batch.confirm-first','payment.draft-cash','payment.draft-noncash','settlement.draft-free','payment.multi-batch-cash']);
 const returns=new Set(['refund.served','refund.return-stock','cancellation.paid','refund.cancelled','cancellation.refund-paid','cancellation.return-stock','cancellation.free','return.free','cancellation.unpaid','return.unpaid']);
 type Stock=Extract<BusinessRecord,{recordType:'stock-group'}>['stockGroup'];
 type EventValue={groupId?:string;delta?:number;required?:number;before?:number;after?:number;event?:{id?:string;refundId?:string;cancellationId?:string;paymentId?:string;reason?:string;recordedAt?:string;units?:{id:string;groupId:string}[]}};
@@ -44,8 +44,15 @@ export async function readInternalStockReport(db:BerrieDatabase,storeId:string):
    const payload=c.payload as {metadata?:{recordedAt?:string}};
    const audit=c.audit.find(a=>a.id===`stock-audit:${c.operationId}`)?.value as {recordedAt?:string;occurredAt?:string;reason?:string|null}|undefined;
    const batch=c.state.find(t=>t.key===`first-batch:${c.targetId}`)?.value as Extract<BusinessRecord,{recordType:'first-batch'}>|undefined;
-   const unitIds=kind==='debit' && batch?.recordType==='first-batch'?batch.batch.draft.items.filter(i=>batch.batch.skuGroups.some(m=>m.skuId===i.skuId&&m.groupId===group.groupId)).flatMap(i=>i.unitIds):kind==='return'?(v.event?.units??[]).filter(u=>u.groupId===group.groupId).map(u=>u.id):[];
-   ledger.push({ledgerId:entry.id,operationId:c.operationId,groupId:group.groupId,revision,kind,orderId:kind==='debit'||kind==='return'?c.targetId:null,sourceId:kind==='debit'?`first-batch:${c.targetId}`:v.event?.id??null,refundId:v.event?.refundId??null,cancellationId:v.event?.cancellationId??null,paymentId:v.event?.paymentId??null,unitIds,actorId:c.actorId,occurredAt:audit?.occurredAt??(kind==='debit'?batch?.batch.confirmedAt:null)??null,recordedAt:audit?.recordedAt??v.event?.recordedAt??payload.metadata?.recordedAt??null,reason:audit?.reason??v.event?.reason??null,delta,before,after});
+   const addition=c.state.find(t=>t.key===`order-batch:${c.targetId}:2`)?.value as Extract<BusinessRecord,{recordType:'order-batch'}>|undefined;
+   const debitBatch=c.kind==='payment.multi-batch-cash'?addition:batch;
+   if(kind==='debit' && (!debitBatch || (c.kind==='payment.multi-batch-cash' && debitBatch.recordType!=='order-batch'))) throw new Error('Batch debit stok tidak tersedia');
+   const debitItems=debitBatch?.recordType==='first-batch'?debitBatch.batch.draft.items:debitBatch?.recordType==='order-batch'?debitBatch.batch.draft.items:[];
+   const debitMappings=debitBatch?.recordType==='first-batch'?debitBatch.batch.skuGroups:debitBatch?.recordType==='order-batch'?debitBatch.batch.skuGroups:[];
+   const unitIds=kind==='debit'?debitItems.filter(i=>debitMappings.some(m=>m.skuId===i.skuId&&m.groupId===group.groupId)).flatMap(i=>i.unitIds):kind==='return'?(v.event?.units??[]).filter(u=>u.groupId===group.groupId).map(u=>u.id):[];
+   const sourceId=kind==='debit'?(c.kind==='payment.multi-batch-cash'?`order-batch:${c.targetId}:2`:`first-batch:${c.targetId}`):v.event?.id??null;
+   const confirmedAt=debitBatch?.recordType==='first-batch'?debitBatch.batch.confirmedAt:debitBatch?.recordType==='order-batch'?debitBatch.batch.confirmedAt:null;
+   ledger.push({ledgerId:entry.id,operationId:c.operationId,groupId:group.groupId,revision,kind,orderId:kind==='debit'||kind==='return'?c.targetId:null,sourceId,refundId:v.event?.refundId??null,cancellationId:v.event?.cancellationId??null,paymentId:v.event?.paymentId??null,unitIds,actorId:c.actorId,occurredAt:audit?.occurredAt??(kind==='debit'?confirmedAt:null)??null,recordedAt:audit?.recordedAt??v.event?.recordedAt??payload.metadata?.recordedAt??null,reason:audit?.reason??v.event?.reason??null,delta,before,after});
    prior=next;
   }
   if(prior?.balance!==group.balance) throw new Error('Saldo akhir stok tidak cocok');
