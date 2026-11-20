@@ -7,6 +7,8 @@ import { AuthorizedDrafts, type CatalogDraftInput } from '../storage/authorized-
 import { AuthorizedPayments } from '../storage/authorized-payments';
 import { AuthorizedStock } from '../storage/authorized-stock';
 import { AuthorizedServing } from '../storage/authorized-serving';
+import { AuthorizedReports } from '../storage/authorized-reports';
+import { readInternalSalesReports } from '../storage/reports';
 import { canonical, type AtomicChange } from '../storage/commit';
 import type { BerrieDatabase } from '../storage/database';
 import type { LocalPinSecurity } from '../storage/local-pin';
@@ -19,6 +21,7 @@ import { initialServing } from '../domain/serving';
 import { ordersFromSnapshot, sessionCloseBlockers, type SessionBlockersRead } from '../storage/order-status';
 import type { OperationalStatus } from '../domain/order-status';
 import type { CashReport } from '../domain/cash-report';
+import type { StockReport } from '../domain/stock-report';
 import type { Payment } from '../domain/payment';
 import type { PaymentMethods } from '../domain/payment-methods';
 import type { PaymentMethodsInput } from '../storage/payment-methods';
@@ -31,11 +34,12 @@ import type { AdditionsCashInput } from '../storage/payment-additions-cash';
 export interface SaleItem {id:string;skuId:string;name:string;price:number;unitIds:string[];note:string;serving:'dine_in'|'takeaway';batch:1|2;units:{id:string;status:'processed'|'served'|'cancelled'}[]}
 export interface SaleOrder {id:string;number:string;customer:string;serving:'dine_in'|'takeaway';note:string;sessionId:string;revision:number;batchRevision:number|null;servingRevision:number|null;items:SaleItem[];total:number;phase:'draft'|'confirmed'|'paid';payment:Payment|null;received:number|null;change:number|null;served:boolean;status:OperationalStatus;readOnly:boolean;cancellation:{reason:string;recordedAt:string;actorId:string}|null}
 export interface CashView {sessionId:string;number:string;revision:number;opening:number;balance:number}
-export interface OwnerView {catalog:{categories:{id:string;name:string}[];menus:{id:string;skuId:string;stockGroupId:string;name:string;categoryId:string;code:string;price:number;stock:number;minimum:number}[];revision:number|null};paymentMethods:{methods:PaymentMethods;revision:number|null};cash:CashView|null;countActive:boolean;closedSessionId:string|null;closedReport:CashReport|null;blockers:SessionBlockersRead|null;orders:SaleOrder[]}
+export interface ClosedShift {cash:CashReport;sales:Awaited<ReturnType<typeof readInternalSalesReports>>;stock:StockReport;stockMovements:StockReport['ledger']}
+export interface OwnerView {catalog:{categories:{id:string;name:string}[];menus:{id:string;skuId:string;stockGroupId:string;name:string;categoryId:string;code:string;price:number;stock:number;minimum:number}[];revision:number|null};paymentMethods:{methods:PaymentMethods;revision:number|null};cash:CashView|null;countActive:boolean;closedSessionId:string|null;closedReport:ClosedShift|null;blockers:SessionBlockersRead|null;orders:SaleOrder[]}
 type Op={operationId:string;localSequence:number;recordedAt:string};
 export class OwnerCashier {
- private active=true;private journal:CommandJournal;private catalog:AuthorizedCatalog;private cash:AuthorizedCash;private drafts:AuthorizedDrafts;private stock:AuthorizedStock;private payments:AuthorizedPayments;private serving:AuthorizedServing;
- constructor(private grant:AccessGrant,private pin:LocalPinSecurity,private permits:OfflinePermitStorage,private db:BerrieDatabase){this.journal=new CommandJournal(db);this.catalog=new AuthorizedCatalog(db,pin,permits);this.cash=new AuthorizedCash(db,pin,permits);this.drafts=new AuthorizedDrafts(db,pin,permits);this.stock=new AuthorizedStock(db,pin,permits);this.payments=new AuthorizedPayments(db,pin,permits);this.serving=new AuthorizedServing(db,pin,permits);}
+ private active=true;private journal:CommandJournal;private catalog:AuthorizedCatalog;private cash:AuthorizedCash;private reports:AuthorizedReports;private drafts:AuthorizedDrafts;private stock:AuthorizedStock;private payments:AuthorizedPayments;private serving:AuthorizedServing;
+ constructor(private grant:AccessGrant,private pin:LocalPinSecurity,private permits:OfflinePermitStorage,private db:BerrieDatabase){this.journal=new CommandJournal(db);this.catalog=new AuthorizedCatalog(db,pin,permits);this.cash=new AuthorizedCash(db,pin,permits);this.reports=new AuthorizedReports(db,pin,permits);this.drafts=new AuthorizedDrafts(db,pin,permits);this.stock=new AuthorizedStock(db,pin,permits);this.payments=new AuthorizedPayments(db,pin,permits);this.serving=new AuthorizedServing(db,pin,permits);}
  invalidate(){this.active=false;this.journal.close();}
  private guard(){if(!this.active)throw new Error('Akses sudah dikunci');}
  private async read<T>(fn:()=>Promise<T>):Promise<T>{this.guard();if(this.db.name!==this.pin.businessName||this.db.name!==this.permits.businessName)throw new Error('Sumber akses tidak sesuai');const i=this.grant.identity,captured=this.pin.captureIdentity(i);const first=await this.permits.read(i);return this.pin.withAuthorizationLock(checkPin=>this.permits.withAuthorizationLock(readPermit=>navigator.locks.request(`berrie-writer:${this.db.name}`,async()=>{this.guard();captured();const pinGuard=await checkPin(i),current=await readPermit(i);if(current.clockFault||canonical(first.permit)!==canonical(current.permit)||canonical(first.policy??null)!==canonical(current.policy??null)||current.permit.payload.version!==2||!current.policy||current.permit.payload.role!=='owner'||current.policy.version!==current.permit.payload.policyVersion||!current.policy.actors.some(a=>a.id===i.actorId&&a.role==='owner'&&a.active))throw new Error('Akses tidak sah');pinGuard();current.assertTime();const result=await fn();this.guard();captured();(await checkPin(i))();return result;})));}
@@ -80,11 +84,16 @@ export class OwnerCashier {
    }
    return {catalog:{categories:c.categories,menus,revision:revision<0?null:revision},cash,countActive,closedSessionId,blockers,orders};
   });
-  let closedReport:CashReport|null=null;
-  if(base.closedSessionId){const report=await this.cash.report(this.grant.identity,base.closedSessionId);if(report.status!=='ok')throw new Error('Ringkasan kas tertutup tidak dapat dibaca');closedReport=report.value;}
+  let closedReport:ClosedShift|null=null;
+  if(base.closedSessionId){const report=await this.closedShift(base.closedSessionId);closedReport=report;}
   const methods=await this.payments.readMethods(this.grant.identity);
   if(methods.status!=='ok')throw new Error('Metode pembayaran tidak dapat dibaca');
   return {...base,closedReport,paymentMethods:methods.value};
+ }
+ async closedShift(sessionId:string):Promise<ClosedShift>{
+  const report=await this.reports.closedShift(this.grant.identity,{sessionId});
+  if(report.status!=='ok') throw new Error('Ringkasan shift tertutup tidak dapat dibaca');
+  return report.value as ClosedShift;
  }
  private async run(intent:unknown,opId:string,command:(op:Op)=>Promise<{status:string;value?:unknown;[key:string]:unknown}>):Promise<unknown>{this.guard();const i=this.grant.identity,stream=this.journal.stream(i.storeId,i.deviceId,i.epoch);return navigator.locks.request(`berrie-command:${this.db.name}`,async()=>{this.guard();const pending=await this.journal.pending(stream);for(const row of pending){const outcome=await this.inspect(row.id);if(outcome.status==='committed')await this.journal.set(row.id,'committed',outcome.value);else if(row.id!==opId)throw new Error('Periksa hasil operasi sebelumnya');}const prepared=await this.journal.prepare(stream,intent,opId);if(prepared.status==='committed'){const verified=await this.inspect(opId);if(verified.status!=='committed')throw new Error('Hasil operasi tidak sesuai');return verified.value;}const op={operationId:prepared.id,localSequence:prepared.sequence,recordedAt:prepared.recordedAt};let rejected=false;try{const result=await command(op);if(result.status==='ok'){await this.journal.set(opId,'committed',result.value??result);this.guard();return (result.value??result);}const outcome=await this.inspect(opId);if(outcome.status==='committed'){await this.journal.set(opId,'committed',outcome.value);return outcome.value;}await this.journal.set(opId,'rejected');rejected=true;throw new Error('Operasi ditolak; periksa input dan izin');}catch(e){if(rejected)throw e;const outcome=await this.inspect(opId).catch(()=>({status:'unknown'} as const));if(outcome.status==='committed'){await this.journal.set(opId,'committed',outcome.value);return outcome.value;}await this.journal.set(opId,'unknown');throw e;}});}
  async inspect(operationId:string):Promise<{status:'committed';value:unknown}|{status:'not-recorded'}>{return this.read(async()=>{const receipt=await this.db.receipts.get(operationId);if(!receipt)return {status:'not-recorded'} as const;const change=JSON.parse(receipt.payload) as AtomicChange;const i=this.grant.identity;if(change.storeId!==i.storeId||change.deviceId!==i.deviceId||change.deviceEpoch!==i.epoch||change.actorId!==i.actorId)throw new Error('Operasi bukan milik akses ini');

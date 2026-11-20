@@ -6,6 +6,7 @@ import type { LocalPinSecurity, PinIdentity } from './local-pin';
 import type { OfflinePermitStorage } from './offline-permit';
 import { readInternalSalesReports, validateReportFilter, type ReportFilter } from './reports';
 import { readInternalStockReport } from './stock-report';
+import { readInternalCashReport } from './cash-report';
 
 function copyIdentity(value:PinIdentity):PinIdentity {
  const i=copyInput(value) as PinIdentity;
@@ -51,5 +52,22 @@ export class AuthorizedReports {
  }
  stockCsv(identity:PinIdentity) {
   try {const i=copyIdentity(identity);return this.execute(i,async storeId=>exportStockReportCsv(await readInternalStockReport(this.db,storeId)));} catch {return Promise.resolve({status:'denied'} as const);}
+ }
+ /** One owner-gated, writer-locked projection for a closed local cash session. */
+ closedShift(identity:PinIdentity,input:{sessionId:string}) {
+  try {
+   const i=copyIdentity(identity), data=copyInput(input) as {sessionId:string};
+   if(!data||typeof data!=='object'||Array.isArray(data)||Object.keys(data).join(',')!=='sessionId'||typeof data.sessionId!=='string'||!data.sessionId.trim()||data.sessionId.length>200) throw new Error('Input tidak sah');
+   return this.execute(i,async storeId=>{
+    const cash=await readInternalCashReport(this.db,storeId,data.sessionId);
+    if(cash.report.summary.closingCount===null) throw new Error('Sesi belum ditutup');
+    const sales=await readInternalSalesReports(this.db,storeId,{kind:'session',sessionId:data.sessionId});
+    const stock=await readInternalStockReport(this.db,storeId);
+    const orderIds=[...new Set(stock.ledger.filter(row=>row.kind==='debit'&&row.orderId).map(row=>row.orderId!))];
+    const sources=await Promise.all(orderIds.map(async orderId=>({orderId,row:await this.db.state.get(`first-batch:${orderId}`)})));
+    const sessionOrders=new Set(sources.filter(x=>{const value=x.row?.value as {recordType?:string;batch?:{draft?:{cashSessionId?:string}}}|undefined;return value?.recordType==='first-batch'&&value.batch?.draft?.cashSessionId===data.sessionId;}).map(x=>x.orderId));
+    return {cash,sales,stock,stockMovements:stock.ledger.filter(row=>row.kind==='debit'&&row.orderId!==null&&sessionOrders.has(row.orderId))};
+   });
+  } catch {return Promise.resolve({status:'denied'} as const);}
  }
 }

@@ -4,6 +4,12 @@
 
 ## FLOW-01E · tambahan + tunai (irisan berjalan)
 
+### Rincian shift sesi tertutup
+
+Di **Kas → Rincian shift · Sesi tertutup terakhir**, owner melihat hasil yang tersimpan lokal untuk sesi yang sudah ditutup: uang fisik, ekspektasi laci dan selisih; penjualan/penerimaan neto, jumlah Payment dan unit terjual; serta debit stok per pesanan dan batch dengan saldo sebelum→sesudah. Satu settlement `payment.multi-batch-cash` menggabungkan nama snapshot batch pertama dan **TAMBAHAN** menjadi satu penjualan/Payment, sedangkan stok tetap menunjukkan `first-batch:<order>` dan `order-batch:<order>:2` terpisah. Disclosure tidak mengisi angka nol ketika checkpoint/laporan tidak lengkap; ia menampilkan sumber yang harus diperiksa. Angka sesi tetap memakai batas close lokal, sehingga reload offline dan transaksi pada sesi berikutnya tidak mengubah rincian sesi sebelumnya.
+
+Coba setelah alur tambahan di bawah: tutup sesi dengan Rp130.000, buka **Kas → Rincian shift**, lalu cocokkan satu Payment, 3 unit, penjualan/penerimaan Rp30.000 dan debit Kopi 10→8 lalu 8→7. Muat ulang, buka rincian yang sama, kemudian buka sesi kedua dan buat transaksi baru; sesi pertama harus tetap sama. Ini bukan bukti ACK server, backup, cetak fisik atau restore produksi.
+
 Owner membuka pesanan Toko batch pertama yang sudah diminta dibuat tetapi belum bayar, pilih **Tambah item & bayar tunai**, tambahkan hanya baris baru, lalu buka panel Bayar. Membuka/menutup panel tidak mengubah stok. Setelah uang diterima, **Simpan pembayaran** membayar seluruh nomor pesanan; detail menandai baris baru **TAMBAHAN**. Unit tambahan tetap harus diserahkan sebelum tutup kas. `AuthorizedPayments.payAdditionsCash` memverifikasi katalog/stok/sesi dalam transaksi penulis, menyimpan batch 2, debit stok unit baru, satu Payment/settlement seluruh order dan ledger sale sebesar tagihan. Tidak ada cetak atau jaringan di transaksi.
 
 Coba: buat Kopi Rp10.000 stok 10 dan kas Rp100.000; simpan qty 2 lalu **Bayar nanti** (stok 8), serahkan keduanya, buka order dan tambah 1. Setelah simpan tunai Rp50.000 untuk total Rp30.000, kembalian Rp20.000, stok 7 dan saldo Rp130.000. Kas menolak close sampai satu unit tambahan diserahkan; hitung Rp130.000 lalu tutup. Jalankan `npm run test:pwa:e2e -- pwa-e2e/owner-additions-cash.spec.ts pwa-e2e/owner-noncash.spec.ts` setelah layanan lokal siap.
