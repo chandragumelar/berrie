@@ -21,6 +21,7 @@ import type { PaymentMethods } from '../domain/payment-methods';
 import type { SettlementSnapshot } from '../domain/settlement';
 import type { PermissionMode } from '../domain/permission-policy';
 import { settleConfirmedFirstBatchFree, validateFreeReason, type ConfirmedFreeInput, type DraftFreeInput } from './free-settlement';
+import { payAdditionsCash, type AdditionsCashInput } from './payment-additions-cash';
 
 export interface PaymentOperation {operationId:string;localSequence:number;recordedAt:string}
 const direct:LockProvider={request:async(_name,fn)=>fn()};
@@ -88,6 +89,18 @@ export class AuthorizedPayments {
     const old=s.draft.items.every(item=>item.unitIds.every(unitId=>storedUnitBeforeSnapshot(snap,ctx.storeId,{orderId:d.orderId,unitId},ctx.expiry)));ctx.guard(old);
     const result=await payDraftCash(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,undefined,()=>ctx.guard(old)) as {orderId:string;batchNumber:1;payment:unknown;settlement:unknown};
     return {orderId:result.orderId,batchNumber:result.batchNumber,payment:result.payment,settlement:result.settlement};
+   });
+  } catch {return Promise.resolve({status:'denied'} as const);}
+ }
+ payAdditionsCash(identityInput:PinIdentity,input:AdditionsCashInput,operation:PaymentOperation) {
+  try {
+   const i=identity(identityInput),d=copyInput(input) as AdditionsCashInput,o=copyInput(operation) as PaymentOperation;canonical({i,d,o});
+   const line=(x:unknown)=>exact(x,['expectedUnitPrice','itemId','note','serving','skuId','unitIds'])&&id((x as {itemId:string}).itemId)&&id((x as {skuId:string}).skuId)&&integer((x as {expectedUnitPrice:number}).expectedUnitPrice,1)&&typeof (x as {note:string}).note==='string'&&['dine_in','takeaway'].includes((x as {serving:string}).serving)&&Array.isArray((x as {unitIds:string[]}).unitIds)&&((x as {unitIds:string[]}).unitIds.length>=1)&&((x as {unitIds:string[]}).unitIds.length<=999)&&((x as {unitIds:string[]}).unitIds.every(id));
+   if(!exact(d,['expectedBatchRevision','expectedCatalogRevision','expectedServingRevision','expectedSessionRevision','expectedTotal','items','orderId','received'])||!id(d.orderId)||!integer(d.expectedBatchRevision)||!(d.expectedServingRevision===null||integer(d.expectedServingRevision))||!integer(d.expectedSessionRevision)||!integer(d.expectedCatalogRevision)||!integer(d.expectedTotal,1)||!integer(d.received,1)||!Array.isArray(d.items)||!d.items.length||!d.items.every(line)||new Set(d.items.map(x=>x.itemId)).size!==d.items.length||new Set(d.items.flatMap(x=>x.unitIds)).size!==d.items.reduce((n,x)=>n+x.unitIds.length,0)||!exact(o,['operationId','localSequence','recordedAt'])||!id(o.operationId)||!integer(o.localSequence,1)||typeof o.recordedAt!=='string'||!Number.isFinite(Date.parse(o.recordedAt)))throw new Error('Input tidak sah');
+   return this.execute(i,async ctx=>{
+    if(ctx.role!=='owner')throw new Error('Hanya owner');ctx.guard(false);validateCheckpoint(await checkpoint(this.db));
+    const result=await payAdditionsCash(this.db,d,{...o,storeId:ctx.storeId,deviceId:ctx.deviceId,deviceEpoch:ctx.epoch,actorId:ctx.actorId,policyVersion:ctx.policyVersion},direct,undefined,()=>ctx.guard(false)) as {orderId:string;batchNumber:2;payment:unknown;settlement:unknown;balance:number;sessionRevision:number};
+    return result;
    });
   } catch {return Promise.resolve({status:'denied'} as const);}
  }

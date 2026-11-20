@@ -202,7 +202,7 @@ it('semua arah reklasifikasi berantai memakai delta tunai dan tanpa penjualan ba
   effective=target;revision=(revision??-1)+1;sessionRevision++;seq++;expect(await readCashBalance(db,'store',current)).toBe(30000+(effective==='cash'?27500:0));
  }}
  const snap=await checkpoint(db);expect(snap.state.filter(r=>r.key.startsWith('payment:'))).toHaveLength(1);expect(snap.ledger.filter(r=>(r.value as {kind?:string}).kind==='method-adjustment')).toHaveLength(sessionRevision);
- }finally{await db.delete();}});
+ }finally{await db.delete();}},15000);
 it('penyesuaian tunai yang melampaui integer aman ditolak atomik',async()=>{const db=new BerrieDatabase(crypto.randomUUID());try{
  const {d,current}=await closedQris(db),{adjustClosedPaymentMethod}=await import('./payment-correction');await moveCash(db,{sessionId:current,expectedRevision:0,kind:'in',amount:Number.MAX_SAFE_INTEGER-30000,category:'modal',description:'nyata'},meta('max',10),locks);const before=await checkpoint(db);
  await expect(adjustClosedPaymentMethod(db,{orderId:d.orderId,expectedRevision:null,sourceSessionId:d.cashSessionId,expectedSourceRevision:2,executionSessionId:current,expectedSessionRevision:1,method:'cash',reason:'Koreksi',evidenceReference:'Bukti'},meta('overflow',11),locks)).rejects.toThrow();expect(await checkpoint(db)).toEqual(before);

@@ -1,6 +1,7 @@
 import { validateBusinessRecord, type BusinessRecord } from '../domain/business-record';
 import { draftDateCode } from '../domain/draft';
 import { validateFirstBatch, type FirstBatch } from '../domain/first-batch';
+import type { AdditionalBatch } from '../domain/order-additions';
 import { changeServing, initialServing, type ServingState } from '../domain/serving';
 import { canonical, copyInput, withWriterTransaction, type AtomicChange, type LockProvider } from './commit';
 import { BerrieDatabase } from './database';
@@ -12,13 +13,14 @@ export type ServingAction='serve'|'correct';
 export type SessionSource={id:string;revision:number};
 
 /** Deterministic operation builder, also used to validate every historical receipt. */
-export function makeServingChange(batch:FirstBatch, before:ServingState|null, data:ServingInput, meta:StockMetadata, action:ServingAction, sessionSource:SessionSource, refundSource?:{revision:number|null;unitIds:string[]}):AtomicChange {
+export function makeServingChange(batch:FirstBatch, before:ServingState|null, data:ServingInput, meta:StockMetadata, action:ServingAction, sessionSource:SessionSource, refundSource?:{revision:number|null;unitIds:string[]}, additional?:AdditionalBatch|null):AtomicChange {
  validateFirstBatch(batch);
  if(!data || typeof data!=='object' || Array.isArray(data) || Object.keys(data).sort().join(',')!=='expectedRevision,orderId,reason,unitIds' || data.orderId!==batch.draft.orderId || (data.expectedRevision!==null && (!Number.isSafeInteger(data.expectedRevision) || data.expectedRevision<0)) || (before===null)!==(data.expectedRevision===null)) throw new Error('Intent penyajian tidak sah');
  if(action!=='serve' && action!=='correct') throw new Error('Aksi penyajian tidak sah');
  draftDateCode(meta.recordedAt,'UTC');
- const initial=initialServing(batch), previous=before ?? initial;
- if(previous.storeId!==initial.storeId || previous.orderId!==initial.orderId || previous.cashSessionId!==initial.cashSessionId || canonical(previous.units.map(x=>x.id))!==canonical(initial.units.map(x=>x.id)) || batch.storeId!==meta.storeId || sessionSource.id!==initial.cashSessionId || !Number.isSafeInteger(sessionSource.revision) || sessionSource.revision<0) throw new Error('Sumber penyajian tidak sesuai');
+ const base=initialServing(batch),initial=additional?{...base,units:[...base.units,...additional.draft.items.flatMap(item=>item.unitIds.map(id=>({id,status:'processed' as const})))]}:base, previous=before ?? initial;
+ if(additional && (additional.orderId!==batch.draft.orderId||additional.cashSessionId!==batch.draft.cashSessionId||additional.storeId!==batch.storeId||additional.number!==2)) throw new Error('Sumber batch tambahan tidak sesuai');
+ if(previous.storeId!==initial.storeId || previous.orderId!==initial.orderId || previous.cashSessionId!==initial.cashSessionId || canonical(previous.units.map(x=>x.id).sort())!==canonical(initial.units.map(x=>x.id).sort()) || batch.storeId!==meta.storeId || sessionSource.id!==initial.cashSessionId || !Number.isSafeInteger(sessionSource.revision) || sessionSource.revision<0) throw new Error('Sumber penyajian tidak sesuai');
  if(refundSource && data.unitIds.some(id=>refundSource.unitIds.includes(id))) throw new Error('Unit sudah direfund');
  const next=changeServing(previous,data.unitIds,action,data.reason),operationId=meta.operationId;
  return {operationId,storeId:meta.storeId,deviceId:meta.deviceId,deviceEpoch:meta.deviceEpoch,localSequence:meta.localSequence,actorId:meta.actorId,policyVersion:meta.policyVersion,kind:`serving.${action}`,targetId:data.orderId,payload:refundSource?{data,metadata:meta,contractVersion:2,sessionSource,refundRevision:refundSource.revision}:{data,metadata:meta,contractVersion:1,sessionSource},
@@ -38,6 +40,8 @@ function save(db:BerrieDatabase,input:ServingInput,metadata:StockMetadata,action
   const value=batchRow?.value as BusinessRecord;
   if(!batchRow || batchRow.revision!==0 || value?.recordType!=='first-batch' || value.batch.draft.orderId!==data.orderId || value.batch.storeId!==meta.storeId) throw new Error('Batch pertama tidak ditemukan atau toko berbeda');
   const sessionSource=await requireOrderSession(db,meta.storeId,value.batch.draft.cashSessionId);
+  const additionalRow=await db.state.get(`order-batch:${data.orderId}:2`);validateBusinessRecord(additionalRow?.value);const additionalRecord=additionalRow?.value as BusinessRecord|undefined;
+  if(additionalRow&&additionalRecord?.recordType!=='order-batch') throw new Error('Batch tambahan tidak sah');
   const row=await db.state.get(`serving:${data.orderId}`);
   if((row?.revision ?? null)!==data.expectedRevision) throw new Error('Revisi penyajian berubah');
   let before:ServingState|null=null;
@@ -45,7 +49,7 @@ function save(db:BerrieDatabase,input:ServingInput,metadata:StockMetadata,action
   const refundRow=await db.state.get(`served-refunds:${data.orderId}`);validateBusinessRecord(refundRow?.value);const refundRecord=refundRow?.value as BusinessRecord | undefined;
   if(refundRow && refundRecord?.recordType!=='served-refunds') throw new Error('Histori refund tidak sah');
   const refundSource={revision:refundRow?.revision ?? null,unitIds:refundRecord?.recordType==='served-refunds'?refundRecord.refunds.flatMap(r=>r.units.map(u=>u.id)):[]};
-  return commit(makeServingChange(value.batch,before,data,meta,action,sessionSource,refundSource));
+  return commit(makeServingChange(value.batch,before,data,meta,action,sessionSource,refundSource,additionalRecord?.recordType==='order-batch'?additionalRecord.batch:null));
  },beforeCommit);
 }
 export function serveUnits(db:BerrieDatabase,data:ServingInput,metadata:StockMetadata,locks?:LockProvider,beforeCommit?:()=>void):Promise<unknown> {return save(db,data,metadata,'serve',locks,beforeCommit);}

@@ -2,6 +2,14 @@
 
 ## FLOW-01D · pembayaran non-tunai manual owner
 
+## FLOW-01E · tambahan + tunai (irisan berjalan)
+
+Owner membuka pesanan Toko batch pertama yang sudah diminta dibuat tetapi belum bayar, pilih **Tambah item & bayar tunai**, tambahkan hanya baris baru, lalu buka panel Bayar. Membuka/menutup panel tidak mengubah stok. Setelah uang diterima, **Simpan pembayaran** membayar seluruh nomor pesanan; detail menandai baris baru **TAMBAHAN**. Unit tambahan tetap harus diserahkan sebelum tutup kas. `AuthorizedPayments.payAdditionsCash` memverifikasi katalog/stok/sesi dalam transaksi penulis, menyimpan batch 2, debit stok unit baru, satu Payment/settlement seluruh order dan ledger sale sebesar tagihan. Tidak ada cetak atau jaringan di transaksi.
+
+Coba: buat Kopi Rp10.000 stok 10 dan kas Rp100.000; simpan qty 2 lalu **Bayar nanti** (stok 8), serahkan keduanya, buka order dan tambah 1. Setelah simpan tunai Rp50.000 untuk total Rp30.000, kembalian Rp20.000, stok 7 dan saldo Rp130.000. Kas menolak close sampai satu unit tambahan diserahkan; hitung Rp130.000 lalu tutup. Jalankan `npm run test:pwa:e2e -- pwa-e2e/owner-additions-cash.spec.ts pwa-e2e/owner-noncash.spec.ts` setelah layanan lokal siap.
+
+Cakupan terbatas ke Toko sederhana, harga positif tanpa promo/modifier/tarif dan tepat batch 2. Batch ≥3, non-tunai tambahan, tambahan setelah lunas (order baru), refund/return/koreksi multi-batch, printer fisik, sync/restore produksi dan uji perangkat tetap di luar irisan.
+
 Pada perangkat kasir aktif, owner membuka **Pengaturan → Penjualan → Metode pembayaran**. Tunai selalu aktif; QRIS, Transfer dan E-wallet awalnya nonaktif dan dapat diaktifkan sendiri-sendiri. Simpan satu kali, lalu muat ulang untuk memastikan pilihan tersimpan di perangkat. Ini pencatatan manual setelah owner memastikan pembayaran di layanan eksternal berhasil; Berrie tidak menghubungi penyedia.
 
 Contoh dari UI normal: buat kategori Minuman, menu Kopi Rp10.000 stok 10, buka kas dengan uang awal Rp100.000. Simpan draft A dua Kopi: stok tetap 10 dan saldo laci Rp100.000. Buka lagi A, pilih **Bayar → QRIS**, isi Catatan bila perlu dan centang **Pembayaran sudah saya verifikasi berhasil**. Sebelum dicentang, Simpan pembayaran tidak aktif. Setelah commit, A lunas Rp20.000, stok 8, saldo laci tetap Rp100.000, dan pekerjaan penyerahan masih 0/2. Untuk B satu Kopi, pilih **Bayar nanti**: stok 7. Dari detail B pilih **Lanjutkan ke bayar → Transfer**, verifikasi dan simpan Rp10.000. Stok dan saldo laci tetap. Selesaikan penyerahan A/B di Pesanan; sebelum itu Kas menahan penutupan. Hitung fisik Rp100.000 pada form buta, selisih nol, tutup sekali. Buka ulang dengan PIN, periksa ringkasan Kas dan detail kedua pembayaran di Riwayat. Menonaktifkan metode sesudahnya tidak mengubah Payment lama.
@@ -446,8 +454,8 @@ Build menghasilkan `sw.js`, salinan `app-shell.<buildId>.html`, manifest dan iko
 
 Jalankan regresi UI nyata dengan `npm run test:access:e2e -- flow-e2e/owner-shift-close.spec.ts` ketika Supabase lokal, Edge Function dan Mailpit aktif. Tes membuat akun, menu, sesi, pesanan, pembayaran, penyajian, hitungan dan close lewat UI; IndexedDB hanya dibaca untuk memeriksa efek dan mensimulasikan journal `unknown` sesudah close.
 
-### Kontrak penyimpanan batch tambahan (fondasi FLOW-01E, belum dapat dipakai)
+### Kontrak penyimpanan batch tambahan (FLOW-01E batch 2 tunai)
 
 `order-additions:<orderId>` adalah head schema v1 yang menyimpan toko, order, sesi, `batchCount` dan `pending`. Rekor yang tidak ada tetap bermakna order historis dengan batch pertama dan tanpa pending; head yang sudah dibuat tidak boleh dihapus hanya karena `pending` kosong. Batch berikutnya memakai `order-batch:<orderId>:<n>`; snapshotnya hanya boleh memuat unit baru dan nomor mulai dari 2. `readAdditionSources` membaca batch pertama dan batch tambahan berurutan, lalu menolak head/batch hilang, toko/sesi salah, atau ID unit yang dipakai ulang.
 
-Fondasi ini belum memiliki perintah simpan/konfirmasi, tidak mendebit stok, tidak membuat job dapur, settlement, Payment atau UI, dan belum memperluas validator receipt/proyeksi laporan. Jangan menulis key tersebut dari aplikasi atau tooling; kontrak mutasi berizin FLOW-01E masih dikerjakan. Tes domain dapat dijalankan dari `foundation/app/` dengan `npx vitest run src/domain/order-additions.test.ts --maxWorkers=2`.
+`payment.multi-batch-cash` adalah satu-satunya writer irisan ini: head berisi `batchCount:2,pending:[]`, batch/job dapur 2 memuat unit baru, serving mempertahankan status lama dan menambah unit processed, sedangkan Payment, settlement dan job pelanggan v4 merujuk batch 1+2. Receipt mengikat input, metadata, session source dan sumber katalog/stok; validasi checkpoint/replay menolak key, toko, sesi, unit atau kontrak yang tidak cocok. Jangan menulis key tersebut dari tooling. Batch berikutnya dan perubahan selain pembayaran tunai owner tetap tidak didukung.

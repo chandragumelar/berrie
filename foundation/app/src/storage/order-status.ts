@@ -10,9 +10,9 @@ import { validateCheckpoint } from './validate-checkpoint';
 export interface IncompleteSource { key:string; reason:string }
 export interface OrderStatusRead { status:OperationalStatus|null; incomplete:IncompleteSource[] }
 export interface SessionBlockersRead { blockers:OperationalStatus[]; incomplete:IncompleteSource[] }
-const relevant=['order','draft','first-batch','serving','draft-cancellation','unpaid-cancellation','paid-cancellations','free-cancellations','settlement','payment','served-refunds','refund-history','stock-returns','free-stock-returns','unpaid-stock-returns','customer-job','kitchen-job','payment-corrections'];
+const relevant=['order','draft','first-batch','order-additions','order-batch','kitchen-job-addition','serving','draft-cancellation','unpaid-cancellation','paid-cancellations','free-cancellations','settlement','payment','served-refunds','refund-history','stock-returns','free-stock-returns','unpaid-stock-returns','customer-job','kitchen-job','payment-corrections'];
 const batchKinds=['batch.confirm-first','payment.draft-cash','payment.draft-noncash','settlement.draft-free'];
-const settlementKinds=['payment.confirmed-cash','payment.draft-cash','payment.confirmed-noncash','payment.draft-noncash','settlement.confirmed-free','settlement.draft-free'];
+const settlementKinds=['payment.confirmed-cash','payment.draft-cash','payment.multi-batch-cash','payment.confirmed-noncash','payment.draft-noncash','settlement.confirmed-free','settlement.draft-free'];
 function assertId(id:string) {if(typeof id!=='string' || !id.trim() || id.length>200) throw new Error('ID tidak sah');}
 function changes(snapshot:Snapshot):AtomicChange[] {return snapshot.receipts.map(row=>JSON.parse(row.payload) as AtomicChange);}
 function source(changes:AtomicChange[],key:string) {return changes.find(c=>c.state.some(row=>row.key===key && row.expectedRevision===null));}
@@ -49,13 +49,16 @@ function read(snapshot:Snapshot, cs:AtomicChange[],storeId:string,orderId:string
  if(batch && batch.recordType!=='first-batch') throw new Error('Batch tidak sah');
  if(batch && (batch.schemaVersion!==2 || !batchKinds.includes(source(cs,bkey)?.kind ?? ''))) return {status:null,incomplete:[{key:bkey,reason:'Asal batch belum didukung'}]};
  if(batch && (batch.batch.storeId!==storeId || batch.batch.draft.orderId!==orderId || batch.batch.draft.cashSessionId!==d.cashSessionId || batch.batch.draft.displayNumber!==d.displayNumber)) throw new Error('Referensi batch tidak sesuai');
+ const additionHead=typed(snapshot,`order-additions:${orderId}`,'order-additions') as Extract<BusinessRecord,{recordType:'order-additions'}>|undefined,additional=typed(snapshot,`order-batch:${orderId}:2`,'order-batch') as Extract<BusinessRecord,{recordType:'order-batch'}>|undefined;
+ if(additionHead && (!batch || additionHead.additions.storeId!==storeId || additionHead.additions.orderId!==orderId || additionHead.additions.cashSessionId!==d.cashSessionId || additionHead.additions.batchCount!==2 || additionHead.additions.pending.length || !additional)) throw new Error('Head tambahan tidak sesuai');
+ if(additional && (!additionHead || additional.batch.storeId!==storeId || additional.batch.orderId!==orderId || additional.batch.cashSessionId!==d.cashSessionId || additional.batch.number!==2)) throw new Error('Batch tambahan tidak sesuai');
  if(batch && cancellation) throw new Error('Draft batal memiliki batch');
  const servingRow=typed(snapshot,`serving:${orderId}`,'serving');
  if(servingRow && servingRow.recordType!=='serving') throw new Error('Penyajian tidak sah');
  if(servingRow && !batch) throw new Error('Penyajian tanpa batch');
- const serving=batch ? servingRow?.serving ?? initialServing(batch.batch) : null;
+ const serving=batch ? servingRow?.serving ?? { ...initialServing(batch.batch), units:[...initialServing(batch.batch).units,...(additional?.batch.draft.items.flatMap(i=>i.unitIds.map(id=>({id,status:'processed' as const}))) ?? [])] } : null;
  if(serving && batch) {
-  const expected=initialServing(batch.batch);
+  const expected={ ...initialServing(batch.batch), units:[...initialServing(batch.batch).units,...(additional?.batch.draft.items.flatMap(i=>i.unitIds.map(id=>({id,status:'processed' as const}))) ?? [])] };
   if(serving.storeId!==storeId || serving.orderId!==orderId || serving.cashSessionId!==d.cashSessionId || canonical(serving.units.map(u=>u.id).sort())!==canonical(expected.units.map(u=>u.id).sort())) throw new Error('Unit penyajian tidak sesuai');
  }
  const sr=typed(snapshot,`settlement:${orderId}`,'settlement'),pr=typed(snapshot,`payment:${orderId}`,'payment');
@@ -64,7 +67,7 @@ function read(snapshot:Snapshot, cs:AtomicChange[],storeId:string,orderId:string
  if(sr && (!settlementKinds.includes(source(cs,`settlement:${orderId}`)?.kind ?? '') || sr.settlement.source==='platform')) return {status:null,incomplete:[{key:`settlement:${orderId}`,reason:'Settlement belum didukung'}]};
  if(pr && (!sr || sr.settlement.source!=='payment' || pr.payment.storeId!==storeId || pr.payment.orderId!==orderId || pr.payment.cashSessionId!==d.cashSessionId || pr.payment.amount!==sr.settlement.paymentAmount)) throw new Error('Payment tidak sesuai');
  if(sr && ((sr.settlement.source==='payment')!==!!pr)) throw new Error('Payment hilang');
- if(sr && batch && canonical(sr.settlement.units.map(u=>u.id).sort())!==canonical(initialServing(batch.batch).units.map(u=>u.id).sort())) throw new Error('Unit settlement tidak sesuai');
+ if(sr && batch && canonical(sr.settlement.units.map(u=>u.id).sort())!==canonical((serving ?? initialServing(batch.batch)).units.map(u=>u.id).sort())) throw new Error('Unit settlement tidak sesuai');
  const paid=typed(snapshot,`paid-cancellations:${orderId}`,'paid-cancellations'),free=typed(snapshot,`free-cancellations:${orderId}`,'free-cancellations'),unpaid=typed(snapshot,`unpaid-cancellation:${orderId}`,'unpaid-cancellation'),refund=typed(snapshot,`served-refunds:${orderId}`,'served-refunds');
  if(paid && paid.recordType!=='paid-cancellations' || free && free.recordType!=='free-cancellations' || unpaid && unpaid.recordType!=='unpaid-cancellation' || refund && refund.recordType!=='served-refunds') throw new Error('Histori tidak sah');
  const settlement:SettlementStatus=sr?.settlement.source==='payment'?'paid':sr?.settlement.source==='free'?'free':'unpaid';
@@ -75,7 +78,7 @@ function read(snapshot:Snapshot, cs:AtomicChange[],storeId:string,orderId:string
  if(serving && canonical([...cancelledIds].sort())!==canonical(serving.units.filter(u=>u.status==='cancelled').map(u=>u.id).sort())) throw new Error('Unit pembatalan tidak sesuai');
  if(cancellations.some(c=>c.orderId!==orderId || c.storeId!==storeId || c.cashSessionId!==d.cashSessionId || c.units.some(u=>sr?.settlement.totals.allocations.find(a=>a.id===u.id)?.total!==u.amount))) throw new Error('Alokasi pembatalan tidak sesuai');
  if(row(snapshot,`refund-history:${orderId}`)) return {status:null,incomplete:[{key:`refund-history:${orderId}`,reason:'Histori refund generik belum didukung'}]};
- return {status:reduceOrderStatus({orderId,displayNumber:d.displayNumber,cashSessionId:d.cashSessionId,draftUnits:d.items.reduce((n,i)=>n+i.unitIds.length,0),draftCancelled:!!cancellation,serving,settlement,cancellations,refunds}),incomplete:[]};
+ return {status:reduceOrderStatus({orderId,displayNumber:d.displayNumber,cashSessionId:d.cashSessionId,draftUnits:[...d.items,...(additional?.batch.draft.items ?? [])].reduce((n,i)=>n+i.unitIds.length,0),draftCancelled:!!cancellation,serving,settlement,cancellations,refunds}),incomplete:[]};
 }
 async function snapshot(db:BerrieDatabase) {return validateCheckpoint(await checkpoint(db));}
 /** Internal read only; T-04 must authorize access. */
