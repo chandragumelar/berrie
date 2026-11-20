@@ -1,5 +1,11 @@
 # Fondasi aplikasi Berrie
 
+## Sync receipt lokal (FLOW-01H, parsial)
+
+Jalankan Supabase/Edge/Mailpit lokal seperti konfigurasi akses di bawah. Edge `berrie-access` juga memuat `berrie-sync`; dari `foundation/` jalankan `supabase functions serve berrie-access --env-file supabase/.env.local`. Setelah owner membuka PIN, Berrie mengirim receipt operasi satu per satu dengan ID operasi dan hash kanonis. ACK server dicatat sebagai metadata terpisah—receipt/outbox lokal tidak dihapus dan ACK bukan bukti cetak atau backup.
+
+Di header kasir, **tersimpan lokal · menunggu server** berarti operasi tetap aman di IndexedDB namun belum diakui server. **Coba kirim lagi** mengirim ulang receipt yang sama; jangan membuat pembayaran atau order kedua. PostgreSQL lokal menyimpan receipt server dan head stream per toko/perangkat/epoch. Jalur ini masih parsial: pembaca ringkasan shift server, E2E ACK-hilang/offline lengkap, backup/restore, serta printer fisik belum merupakan bukti rilis.
+
 ## Coba satu shift dengan printer sistem (FLOW-01G, bukti lokal parsial)
 
 Gunakan data uji dan lingkungan Supabase/Edge/Mailpit lokal terisolasi—bukan toko atau printer produksi. Dari `foundation/`, jalankan layanan seperti bagian konfigurasi lokal, lalu dari `foundation/app/` jalankan `npm ci`, `npm run build`, dan `npm run preview -- --host 127.0.0.1 --port 5173 --strictPort`. Login/aktivasi pertama membutuhkan jaringan. Sesudah membuka aplikasi sekali, pastikan indikator **Siap offline**, lalu browser dapat ditutup/dibuka kembali pada profil sama untuk membaca checkpoint lokal offline.
