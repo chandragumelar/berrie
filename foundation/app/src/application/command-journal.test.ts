@@ -19,3 +19,11 @@ it('intent tutup kas unknown membekukan revisi dan alasan sampai receipt diperik
  await expect(journal.prepare(stream,{...intent,input:{...intent.input,reason:'Alasan baru'}},'close-op')).rejects.toThrow('Konflik operation ID');
  const next=await journal.prepare(stream,{kind:'cash-count-save',input:{sessionId:'session-2',amount:0}},'count-op');expect(next.sequence).toBe(2);
  }finally{journal.close();await db.delete();await Dexie.delete(`${name}-commands`);}});
+
+it('refund baru langsung menunggu uang; confirm dan batal saling eksklusif',async()=>{const name=crypto.randomUUID(),db=new BerrieDatabase(name),journal=new CommandJournal(db),stream=journal.stream('store','device',1);try{
+ const intent={kind:'cancelled-refund',input:{orderId:'order-1',selection:[{itemId:'item-1',quantity:1}]}};
+ const prepared=await journal.prepare(stream,intent,'refund-1','awaiting_money');expect(prepared.status).toBe('awaiting_money');
+ const [confirmed,cancelled]=await Promise.allSettled([journal.confirmMoney('refund-1',stream),journal.abandonAwaitingMoney('refund-1',stream)]);
+ expect([confirmed.status,cancelled.status].filter(x=>x==='fulfilled')).toHaveLength(1);
+ const final=await journal.get('refund-1');expect(['money_confirmed','abandoned']).toContain(final?.status);if(final?.status==='money_confirmed')expect(final.moneyConfirmedAt).toMatch(/Z$/);
+ }finally{journal.close();await db.delete();await Dexie.delete(`${name}-commands`);}});
