@@ -11,16 +11,20 @@ import { parseAccessGrant, type AccessGrant } from './contracts';
 import { EnrollmentStore, type Enrollment, type AccessIntent } from './enrollment-store';
 import type { PermitKeys } from '../domain/offline-permit';
 import { OwnerCashier } from '../application/owner-cashier';
+import { OperationSync, type SyncStatus } from '../sync/operation-sync';
 
 export type AccessScreen='config-error'|'signed-out'|'verify-email'|'store-setup'|'activating'|'pin-setup'|'locked'|'unlocked'|'limited'|'device-conflict'|'blocked';
 export interface AccessState { screen:AccessScreen; error:string|null; busy:boolean; grant:AccessGrant|null; decision:PermitDecision|null; email:string; canRenew:boolean }
 export class AccessController {
  state:AccessState={screen:'signed-out',error:null,busy:false,grant:null,decision:null,email:'',canRenew:false};
- private owner:string|null=null; private row:Enrollment|null=null; private security:LocalPinSecurity|null=null; private permits:OfflinePermitStorage|null=null; private business:BerrieDatabase|null=null; private cashierFacade:OwnerCashier|null=null; private stopActivity:(()=>void)|null=null; private monitor:number|null=null;
- constructor(private client:SupabaseClient,private api:AccessApi,private keys:PermitKeys,private enrollments:EnrollmentStore,private notify:(s:AccessState)=>void) {}
+ private owner:string|null=null; private row:Enrollment|null=null; private security:LocalPinSecurity|null=null; private permits:OfflinePermitStorage|null=null; private business:BerrieDatabase|null=null; private cashierFacade:OwnerCashier|null=null; private syncFacade:OperationSync|null=null; private stopActivity:(()=>void)|null=null; private monitor:number|null=null;
+ constructor(private client:SupabaseClient,private api:AccessApi,private keys:PermitKeys,private enrollments:EnrollmentStore,private notify:(s:AccessState)=>void,private syncUrl='',private publishableKey='') {}
  private set(change:Partial<AccessState>):void { this.state={...this.state,...change}; this.notify(this.state); }
- private disposeSecurity():void { this.cashierFacade?.invalidate();this.cashierFacade=null;this.stopActivity?.(); this.stopActivity=null; if(this.monitor!==null) window.clearInterval(this.monitor); this.monitor=null; this.security?.close(); this.permits?.close(); this.business?.close(); this.security=null;this.permits=null;this.business=null; }
+ private disposeSecurity():void { this.cashierFacade?.invalidate();this.cashierFacade=null;this.syncFacade?.stop();this.syncFacade=null;this.stopActivity?.(); this.stopActivity=null; if(this.monitor!==null) window.clearInterval(this.monitor); this.monitor=null; this.security?.close(); this.permits?.close(); this.business?.close(); this.security=null;this.permits=null;this.business=null; }
  cashier():OwnerCashier {if(!this.cashierFacade||!this.state.grant||!['unlocked','limited'].includes(this.state.screen))throw new Error('Kasir terkunci');return this.cashierFacade;}
+ async syncStatus():Promise<SyncStatus|null>{return this.syncFacade?this.syncFacade.status():null;}
+ async syncNow():Promise<SyncStatus|null>{return this.syncFacade?this.syncFacade.flush():null;}
+ private startSync():void {if(!this.business||!this.state.grant||!this.row)return;this.syncFacade?.stop();this.syncFacade=new OperationSync(this.business,this.state.grant,this.row.bindingSecret,this.client,this.syncUrl,this.publishableKey);void this.syncFacade.flush().catch(()=>{});}
  async offlineReady():Promise<boolean> {
   if(this.state.screen!=='unlocked'||!this.state.grant||!this.security||!this.permits||!this.business||!this.cashierFacade) return false;
   const decision=await evaluatePermit(this.permits,this.security,this.state.grant.identity,this.business,'read');
@@ -147,6 +151,7 @@ export class AccessController {
    if(this.row.stage==='grant-received') { await this.enrollments.complete(this.owner,this.state.grant.grantId);this.row=(await this.enrollments.get(this.owner))!; }
    this.set({screen:decision.status==='limited'?'limited':'unlocked',decision,error:null});
    this.cashierFacade?.invalidate();this.cashierFacade=new OwnerCashier(this.state.grant,this.security,this.permits,this.business);
+   this.startSync();
    this.stopActivity?.(); this.stopActivity=observePinActivity(new PinActivity(this.security));
    if(this.monitor!==null) window.clearInterval(this.monitor);
    this.monitor=window.setInterval(()=>{void this.security?.check(true).then(ok=>{if(!ok){this.cashierFacade?.invalidate();this.cashierFacade=null;this.set({screen:'locked',decision:null});}}).catch(()=>{this.cashierFacade?.invalidate();this.cashierFacade=null;this.set({screen:'locked',decision:null});});},1000);
@@ -164,6 +169,7 @@ export class AccessController {
    await this.installGrant(grant); await this.enrollments.complete(this.owner,grant.grantId);this.row=(await this.enrollments.get(this.owner))!;
    const decision=await evaluatePermit(this.permits!,this.security,grant.identity,this.business!,'read');
    this.set({grant,decision,screen:decision.allowed?(decision.status==='limited'?'limited':'unlocked'):'locked'});
+   this.startSync();
   } catch(e) { await this.handleError(e); } finally { this.set({busy:false}); }
  }
  async lock():Promise<void> { this.cashierFacade?.invalidate();this.cashierFacade=null;await this.security?.lock(); this.set({screen:'locked',decision:null,error:null}); }
