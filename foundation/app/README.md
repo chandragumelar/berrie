@@ -1,5 +1,15 @@
 # Fondasi aplikasi Berrie
 
+## Coba satu shift dengan printer sistem (FLOW-01G, bukti lokal parsial)
+
+Gunakan data uji dan lingkungan Supabase/Edge/Mailpit lokal terisolasi—bukan toko atau printer produksi. Dari `foundation/`, jalankan layanan seperti bagian konfigurasi lokal, lalu dari `foundation/app/` jalankan `npm ci`, `npm run build`, dan `npm run preview -- --host 127.0.0.1 --port 5173 --strictPort`. Login/aktivasi pertama membutuhkan jaringan. Sesudah membuka aplikasi sekali, pastikan indikator **Siap offline**, lalu browser dapat ditutup/dibuka kembali pada profil sama untuk membaca checkpoint lokal offline.
+
+Di **Pengaturan → Printer**, pilih 58 mm atau 80 mm, simpan, dan gunakan **Uji cetak**. Browser/OS memilih printer; kalibrasikan margin di driver sistem untuk kombinasi printer yang sedang diuji. Setelan Berrie hanya memilih lebar tata letak—tidak menyatakan printer tersambung, kertas ada, atau kertas keluar. Uji cetak tidak membuat order maupun mengubah kas.
+
+Skenario satu shift: buat Kopi Rp10.000 stok 10; buka kas Rp100.000. Draft A qty2 tidak boleh mengurangi stok atau memicu dialog. Bayar A tunai Rp25.000: dialog sistem mencoba **DAPUR** lalu **LUNAS**, stok 8, laci Rp120.000, total Rp20.000 dan kembali Rp5.000. B qty1 dengan **Bayar nanti** mencoba DAPUR batch1 (stok7); kemudian tambah satu unit dan bayar Rp20.000 mencoba **TAMBAHAN** batch2 lalu LUNAS seluruh B (stok6, laci Rp140.000). Serahkan seluruh unit, hitung fisik Rp140.000 dan tutup kas; setelah reload offline, dua Payment/settlement, stok6 dan selisih Rp0 harus tetap terbaca.
+
+Jika dialog ditutup, printer putus/kehabisan kertas, atau aplikasi terinterupsi, hasilnya hanya **Hasil cetak belum diketahui**—jangan bayar atau proses lagi. Buka detail order yang sama untuk melihat preview snapshot dan gunakan **Cetak ulang — SALINAN**. Salinan tidak mengubah receipt bisnis, kas, stok, atau penyajian. Dukungan kertas fisik belum dapat diklaim dari browser test/PDF; catat OS, browser, model/firmware, koneksi, lebar dan margin serta jalankan minimum 20 pasang tiket/struk pada kombinasi pilot sebelum menyatakannya didukung.
+
 ## FLOW-01F · batal unit lunas tunai dan refund
 
 Untuk order Toko batch pertama yang sudah **Lunas · Tunai** pada sesi kas asal yang masih terbuka, buka **Pesanan** lalu detailnya. Pilih **Batalkan unit**, isi jumlah unit yang belum diserahkan, alasan, centang **Dapur sudah diberi tahu**, dan—bila barang layak jual—pilih pengembalian stok. Pembatalan menyimpan kewajiban **Refund tertunda** tanpa mengubah Payment asal atau saldo laci. Setelah uang benar-benar diberikan, tekan **Catat refund tunai**, siapkan intent, lalu hanya tekan **Uang sudah dikembalikan — catat refund** sesudah konfirmasi owner. Reload saat menunggu akan tetap meminta pemeriksaan uang; jangan memakai retry untuk tahap itu. Kas menahan penutupan sampai refund due nol dan unit lain diserahkan.

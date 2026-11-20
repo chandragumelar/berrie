@@ -1,0 +1,10 @@
+import 'fake-indexeddb/auto';
+import { expect, it } from 'vitest';
+import { BerrieDatabase } from './database';
+import { finishPrintAttempt, readPrinterConfiguration, reservePrintAttempt, savePrinterConfiguration } from './system-print';
+import type { PrintableDocument } from '../domain/print-documents';
+
+const identity={storeId:'store',deviceId:'device',epoch:1};
+const document:PrintableDocument={id:'kitchen:order:1',jobKey:'kitchen:order:1',orderId:'order',kind:'kitchen',batch:1,title:'DAPUR',orderNumber:'261120-E1-0001',customer:'Ani',at:'2026-11-20T00:00:00.000Z',timeZone:'Asia/Jakarta',lines:[],mode:'original'};
+it('konfigurasi terpisah dari receipt dan reservasi asli hanya sekali lintas dua pemanggil',async()=>{const db=new BerrieDatabase(`print-${crypto.randomUUID()}`);try{expect(await readPrinterConfiguration(db,identity)).toBeNull();await savePrinterConfiguration(db,identity,'80');expect(await readPrinterConfiguration(db,identity)).toMatchObject({paperWidth:'80'});const [first,second]=await Promise.all([reservePrintAttempt(db,identity,document,'same-request'),reservePrintAttempt(db,identity,document,'same-request')]);expect(second.id).toBe(first.id);await finishPrintAttempt(db,first.id,'unknown');await expect(reservePrintAttempt(db,identity,document,'other-request')).rejects.toThrow('SALINAN');expect(await db.receipts.count()).toBe(0);expect(await db.ledger.count()).toBe(0);}finally{await db.delete();}});
+it('salinan mempunyai attempt sendiri tetapi klik ganda request sama tidak menduplikasi',async()=>{const db=new BerrieDatabase(`print-${crypto.randomUUID()}`);try{const original=await reservePrintAttempt(db,identity,document,'original');await finishPrintAttempt(db,original.id,'failed','dialog gagal');const copy={...document,mode:'copy' as const,copiedAt:'2026-11-20T00:10:00.000Z'};const [a,b]=await Promise.all([reservePrintAttempt(db,identity,copy,'copy-request'),reservePrintAttempt(db,identity,copy,'copy-request')]);expect(a.id).toBe(b.id);expect(await db.printAttempts.count()).toBe(2);}finally{await db.delete();}});
